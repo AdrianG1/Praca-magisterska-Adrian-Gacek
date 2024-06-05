@@ -33,7 +33,7 @@ def setpoint_gen(clk):
                 T_sp = random.randint(min_T, max_T)
                 next_change = random.randint(lower_constraint, upper_constraint)
                 last_change = time
-        except:
+        except StopIteration:
             pass
 
 
@@ -49,6 +49,9 @@ class SystemState():
         # self.diff = 0   # pochodna
         # self.eps = 0    # uchyb regulacji
 
+    def __str__(self):
+        return f"State: [T_sp:{self.T_sp:.02f},T:{self.T:.02f}]"
+
     def as_tensor(self):
         return tf.constant([self.T, self.T_sp], dtype=tf.float32)
 
@@ -57,14 +60,14 @@ class SystemState():
 
 
 class Environment(py_environment.PyEnvironment):
-    SPEEDUP = 100
+    SPEEDUP = 10000
     EPISODE_TIME = 90 * 60  #[s]
     C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
     E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
     COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości
     MEM_LEN = 10            # wielkość pamięci przechoowującej ostatnie temperatury
     NUM_OF_ACTIONS = 5      # liczba akcji
-    STEP = 100
+    #STEP = 100
 
 
     def __init__(self, discret=False):
@@ -74,7 +77,8 @@ class Environment(py_environment.PyEnvironment):
         # Inicjalizacja cyfrowego bliźniaka
         lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
         self.lab = lab()
-        self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
+        self.clk = tclab.clock(self.EPISODE_TIME)
+        #self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
 
         # inicjalizacja generatora nastaw
         self._T_gen = setpoint_gen(self.clk)
@@ -135,8 +139,7 @@ class Environment(py_environment.PyEnvironment):
                     self.lab = lab()
         except:
             pass
-
-        self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
+        self.clk = tclab.clock(self.EPISODE_TIME)
         self._T_gen = setpoint_gen(self.clk)
 
         self.__state_update()
@@ -151,7 +154,7 @@ class Environment(py_environment.PyEnvironment):
             self.done = (self.time >= self.EPISODE_TIME)
         except StopIteration:
             self.done = True
-
+        print(self.time, self.state, self.done, action)
         self.__set_control(action)
         self.__state_update()
         self.reward = self.__calculate_reward(action)
@@ -170,7 +173,7 @@ class Environment(py_environment.PyEnvironment):
     def __calculate_reward(self, action):
         # 1 gdy aktualna temperatura jest w komfortowym zakresie, jeśli nie: 0
         #comfort = 1 if abs(self.state.T - self.state.T_sp) <= self.COMFORT_CONSTR else 0
-        comfort = 1 - abs(self.state.T - self.state.T_sp) / 100
+        comfort = 1 - abs(self.state.T - self.state.T_sp) / 20
         # Wykorzystana energia TODO liniowo?
         energy = action / 100
         return comfort * self.C_COEF + energy * self.E_COEF
@@ -196,8 +199,8 @@ class Environment(py_environment.PyEnvironment):
                 shape=(), dtype=np.float32, minimum=0, maximum=100.0, name='action')
 
         # Define the observation spec (state)
-        self._observation_spec = array_spec.BoundedArraySpec(
-            shape=(self.state.size,), dtype=np.float32, name='observation', minimum=[0.0, 0.0], maximum=[100.0, 100.0])
+        self._observation_spec = array_spec.ArraySpec(
+            shape=(self.state.size,), dtype=np.float32, name='observation')
 
 
         # Define the reward spec

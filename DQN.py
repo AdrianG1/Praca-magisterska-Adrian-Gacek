@@ -14,13 +14,14 @@ from tf_agents.environments import ParallelPyEnvironment, wrappers
 from tf_agents.utils import common
 from tf_agents.trajectories import trajectory
 from tf_agents.policies import policy_saver
-
+from tqdm import tqdm
 
 BATCH_SIZE = 1
 BATCH_SIZE_EVAL = 1
-LEARNING_RATE = 0.1
+LEARNING_RATE = 2e-3
 
 def create_environment():
+    #return wrappers.ActionDiscretizeWrapper(Environment(), num_actions=5)
     return Environment(discret=True)
 
 
@@ -31,6 +32,10 @@ def collect_step(environment, policy, replay_buffer):
     traj = trajectory.from_transition(time_step, action_step, next_time_step)
     replay_buffer.add_batch(traj)
 
+    if next_time_step.is_last():
+        environment.reset()
+    print()
+    
 
 def collect_data(env, policy, replay_buffer, steps):
     for _ in range(steps):
@@ -52,7 +57,10 @@ def compute_avg_return(environment, policy, num_episodes=10):
     avg_return = total_return / num_episodes
     return avg_return.numpy()[0]
 
-
+def check_q_values(agent, time_step, action):
+    q_values = agent._q_network(time_step.observation, time_step.step_type)
+    print(tf.math.is_nan(q_values[action]), tf.math.is_inf(q_values[action]))
+    
 def main(argv=None):
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
     print("Is GPU build:", tf.test.is_built_with_cuda())
@@ -66,7 +74,7 @@ def main(argv=None):
     eval_py_env = ParallelPyEnvironment([create_environment] * (BATCH_SIZE_EVAL))
     eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
-    fc_layer_params = (100, 50)
+    fc_layer_params = (100, 50, 75, 75, 75, 75)
     q_net = q_network.QNetwork(
         train_env.observation_spec(),
         train_env.action_spec(),
@@ -104,20 +112,22 @@ def main(argv=None):
     agent.train = common.function(agent.train)
     print("==================================training======================================================")
     # Run the training loop
-    num_iterations = 10000
+    num_iterations = 1000
 
     try:
-        for _ in range(num_iterations):
+        for _ in (range(num_iterations)):
             # Collect a few steps using collect_policy and save to the replay buffer.
             collect_data(train_env, agent.collect_policy, replay_buffer, steps=1)
+            check_q_values(agent, train_env.current_time_step(), 0)
 
             # Sample a batch of data from the buffer and update the agent's network.
             experience, unused_info = next(iterator)
             train_loss = agent.train(experience).loss
 
             step = agent.train_step_counter.numpy()
-            if step % 2000 == 0:
-                print('step = {0}: loss = {1}'.format(step, train_loss))
+            if step % 200 == 0:
+                #print('step = {0}: loss = {1}'.format(step, train_loss))
+                tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
 
             if step % 25000 == 0:
                 # Evaluate the agent's policy once in a while
