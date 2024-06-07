@@ -21,6 +21,17 @@ BATCH_SIZE = 1
 BATCH_SIZE_EVAL = 1
 LEARNING_RATE = 2e-4
 
+global trajs
+trajs = []
+
+def plot_trajs():
+    global trajs
+    states = [traj.observation for traj in trajs]
+    import matplotlib.pyplot as plt
+    plt.figure()
+    plt.plot(range(len(states)), states)
+    plt.title('losses')
+    plt.savefig('./plot/states_trajs.png')
 
 def plot_loss(losses):
     import matplotlib.pyplot as plt
@@ -40,6 +51,7 @@ def create_environment():
 
 
 def collect_step(environment, control_function, replay_buffer):
+
     time_step = environment.current_time_step()
     action = control_function(time_step.observation, environment.envs[0].time) #TODO time
     discrete_action = tf.expand_dims(discretize(action), axis=-1)
@@ -53,6 +65,9 @@ def collect_step(environment, control_function, replay_buffer):
                       next_time_step.reward, 
                       next_time_step.discount)
     replay_buffer.add_batch(traj)
+
+    global trajs
+    trajs.append(traj)
 
     if next_time_step.is_last():
         environment.reset()
@@ -128,6 +143,7 @@ def main(argv=None):
 
     print("================================== collecting data ===============================================")
     # collect_data(train_env, pid.control, replay_buffer, steps=4000)
+    plot_trajs()
 
     collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
     # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
@@ -160,14 +176,14 @@ def main(argv=None):
             #print('step = {0}: loss = {1}'.format(step, train_loss))
             tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
 
-        if step % 500 == 0:
+        if step % 50000 == 0:
             # Evaluate the agent's policy once in a while
             avg_return = compute_avg_return(eval_env, agent.policy, num_episodes=5)
             print('step = {0}: Average Return = {1}'.format(step, avg_return))
 
     plot_loss(losses)
     saver = policy_saver.PolicySaver(agent.policy)
-    saver.save('./policies')
+    saver.save('./policies/DQN')
     env.close()
     eval_py_env.close()
     print("done")
