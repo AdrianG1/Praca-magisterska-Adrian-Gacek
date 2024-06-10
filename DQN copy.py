@@ -16,20 +16,22 @@ from tf_agents.utils import common
 from tf_agents.policies import policy_saver
 from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
+from tf_agents.specs import array_spec
 
 BATCH_SIZE = 1
 BATCH_SIZE_EVAL = 1
 LEARNING_RATE = 2e-4
+DISCOUNT = 0.75
 
 global trajs
 trajs = []
 
 def plot_trajs():
     global trajs
-    states = [traj.observation for traj in trajs]
+    states = np.squeeze(np.array([traj.observation for traj in trajs]))
     import matplotlib.pyplot as plt
     plt.figure()
-    plt.plot(range(len(states)), states)
+    plt.plot(range(len(states)), states[:, 0:2])
     plt.title('losses')
     plt.savefig('./plot/states_trajs.png')
 
@@ -76,6 +78,7 @@ def collect_step(environment, control_function, replay_buffer):
 def collect_data(env, control_function, replay_buffer, steps):
     for _ in tqdm(range(steps)):
         collect_step(env, control_function, replay_buffer)
+        return 0
 
 
 def compute_avg_return(environment, policy, num_episodes=10):
@@ -115,6 +118,28 @@ def configure_agent(env):
     
     return agent
 
+def get_trajectory_from_csv(path, state_dim, replay_buffer):
+    from pandas import read_csv
+    df = read_csv(path, index_col=0)
+    global trajs
+    trajs = []
+    for _, record in df.iterrows():
+
+        state = record.iloc[:state_dim].values  # Convert to numpy array
+        action = record["Akcje"]
+        reward = record["Nagrody"]
+        discrete_action = tf.expand_dims(discretize(action), axis=-1)
+
+        traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
+                        tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
+                        discrete_action, 
+                        (), 
+                        tf.constant(1, dtype=tf.int32, shape=(1,)),
+                        tf.constant(reward, dtype=tf.float32, shape=(1,)), 
+                        tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
+        replay_buffer.add_batch(traj)
+        trajs.append(traj) 
+
 
 def main(argv=None):
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
@@ -129,7 +154,6 @@ def main(argv=None):
     eval_py_env = ParallelPyEnvironment([create_environment] * (BATCH_SIZE_EVAL))
     eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
-    
     agent = configure_agent(train_env)
     agent.initialize()
     # (Optional) Reset the agent's policy state
@@ -142,13 +166,14 @@ def main(argv=None):
                         max_length=11000)
 
     print("================================== collecting data ===============================================")
-    # collect_data(train_env, pid.control, replay_buffer, steps=4000)
+    #collect_data(train_env, pid.control, replay_buffer, steps=4000)
+    get_trajectory_from_csv("./csv_data/trajectory.csv", 6, replay_buffer)
     plot_trajs()
 
     collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
+    collected_data_checkpoint.save("./replay_buffers/replay_buffer")
     # return 0
-    collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
+    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
 
     # Dataset generates trajectories with shape [Bx2x...]
     dataset = replay_buffer.as_dataset(
