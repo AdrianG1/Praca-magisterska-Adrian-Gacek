@@ -12,57 +12,60 @@ from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.trajectories.time_step import TimeStep
 import contextlib
-
+from collections import deque
 
 # genertor nastaw temperatury
 def setpoint_gen(clk):
-    rng = random.Random(2137)
     lower_constraint = 200  # minimalny okres zmian nastaw temperatury [s]
     upper_constraint = 600  # maksymalny okres zmian nastaw temperatury [s]
     min_T = 30              # minimalna wartość nastaw temperatury [*C]
     max_T = 70              # maksymalna wartość nastaw temperatury [*C]
 
     last_change = 0                         # czas ostatniej zmiany nastawy
-    T_sp = rng.randint(min_T, max_T)           # wartość następnej nastawy temperatury
-    next_change = rng.randint(lower_constraint, upper_constraint)  # czas następnej zmiany temperatury
+    T_sp = random.randint(min_T, max_T)           # wartość następnej nastawy temperatury
+    next_change = random.randint(lower_constraint, upper_constraint)  # czas następnej zmiany temperatury
     
     while True:
         yield T_sp
         try:
             time = next(clk)
             if last_change + next_change <= time:
-                T_sp = rng.randint(min_T, max_T)
-                next_change = rng.randint(lower_constraint, upper_constraint)
+                T_sp = random.randint(min_T, max_T)
+                next_change = random.randint(lower_constraint, upper_constraint)
                 last_change = time
         except StopIteration:
             pass
 
 
 class SystemState():
-    size = 2
+    size = 6
 
 
     def __init__(self):
         self.T_sp = 0   # nastawiona wartość temperatury
         self.T = 0      # aktualna wartość temperatury
-        # self.stdev = 0  # odchylenie standardowe
-        # self.skew = 0   # skośność
-        # self.diff = 0   # pochodna
-        # self.eps = 0    # uchyb regulacji
+        self.T_err = 0       # błąd sterowania
+        self.T_std = 0       # odchylenie standardowe
+        self.T_err_std = 0   # odchylenie standardowe błędu
+        self.T_delta = 0     # pochodna temperatury
 
     def __str__(self):
-        return f"State: [T_sp:{self.T_sp:.02f},T:{self.T:.02f}]"
+        return f"State: [T_sp:{self.T_sp:.02f},T:{self.T:.02f}]" #TODO poprawa
 
     def as_tensor(self):
-        return tf.constant([self.T, self.T_sp], dtype=tf.float32)
+        return tf.constant([self.T, self.T_sp, 
+                            self.T_err, self.T_std,
+                            self.T_err_std, self.T_delta], dtype=tf.float32)
 
     def as_array(self):
-        return np.array([self.T, self.T_sp], dtype=np.float32)
+        return np.array([self.T, self.T_sp, 
+                            self.T_err, self.T_std,
+                            self.T_err_std, self.T_delta], dtype=np.float32)
 
 
 class Environment(py_environment.PyEnvironment):
     SPEEDUP = 10000
-    EPISODE_TIME = 90 * 60 /5 #[s]
+    EPISODE_TIME = 90 * 60  #[s]
     C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
     E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
     COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości
@@ -78,11 +81,15 @@ class Environment(py_environment.PyEnvironment):
         # Inicjalizacja cyfrowego bliźniaka
         lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
         self.lab = lab()
-        # self.clk = tclab.clock(self.EPISODE_TIME)
-        self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
+        self.clk = tclab.clock(self.EPISODE_TIME)
+        #self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
 
         # inicjalizacja generatora nastaw
         self._T_gen = setpoint_gen(self.clk)
+
+        # inicjalizacja bufora do wyznaczania wariancji
+        self.T_buffer = deque([0 for _ in range(10)], maxlen=10)
+        self.T_err_buffer = deque([0 for _ in range(10)], maxlen=10)
 
         # inicjalizacja stanu początkowego
         self.state = SystemState()
@@ -129,17 +136,24 @@ class Environment(py_environment.PyEnvironment):
         return self._time_step_spec
 
     def _reset(self):
+        try:
+            with open(os.devnull, 'w') as f:
+                with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+                    self.lab.close()
+                    lab =  tclab.setup(connected=False, speedup=self.SPEEDUP, step=self.STEP)
+                    self.lab = lab()
+                    self.clk = tclab.clock(self.EPISODE_TIME)
+                    self._T_gen = setpoint_gen(self.clk)
 
-        with open(os.devnull, 'w') as f:
-            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-                self.lab.close()
-                lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
-                self.lab = lab()
-                self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
-                self._T_gen = setpoint_gen(self.clk)
+        except:
+            pass
+        self.clk = tclab.clock(self.EPISODE_TIME)
+        self._T_gen = setpoint_gen(self.clk)
 
         self.__state_update()
         self._episode_ended = False
+        self.T_buffer = deque([0 for _ in range(10)], maxlen=10)
+        self.T_err_buffer = deque([0 for _ in range(10)], maxlen=10)
         self._current_time_step = ts.restart(self.state.as_array())
         return self._current_time_step
 
@@ -176,6 +190,14 @@ class Environment(py_environment.PyEnvironment):
     def __state_update(self):
         self.state.T_sp = next(self._T_gen)
         self.state.T = self.lab.T1
+        self.state.T_err = self.state.T_sp - self.state.T      
+        self.state.T_std = np.std(self.T_buffer)      
+        self.state.T_err_std = np.std(self.T_err_buffer)  
+        self.state.T_delta = self.state.T - self.T_buffer[-1] 
+
+        self.T_buffer.append(self.state.T)
+        self.T_err_buffer.append(self.state.T_err)   
+   
         #self.state
 
     def __set_control(self, action):

@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import psutil
+import random
+
 
 def log_memory_usage():
     process = psutil.Process(os.getpid())
@@ -14,23 +16,12 @@ def log_memory_usage():
 def create_environment():
     return Environment(discret=True)
 
-def test():
-    from tf_agents.trajectories import time_step as ts
-    # Load the saved policy
-    loaded_policy = tf.compat.v2.saved_model.load('./policies')
-    print(loaded_policy, "\n\n\n")
-    s = np.array([[50.0, 50.0]], dtype=np.float32).reshape((1, 2))
-    print(s)
-    time_step = ts.restart(s)
-    print(time_step)
-    action_step = loaded_policy.action(time_step)
-    print(action_step.action)
 
 def main():
     env = tf_py_environment.TFPyEnvironment(create_environment())
 
     # Load the saved policy
-    loaded_policy = tf.compat.v2.saved_model.load('./policies')
+    loaded_policy = tf.compat.v2.saved_model.load('./policies/DQN')
 
     rewards = []
     T = []
@@ -39,7 +30,7 @@ def main():
     times = []
     
     log_memory_usage()
-
+ 
     for _ in range(1):
         time_step = env.reset()
         while not time_step.is_last():

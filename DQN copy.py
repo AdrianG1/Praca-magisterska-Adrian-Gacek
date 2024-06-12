@@ -18,10 +18,13 @@ from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
 from tf_agents.specs import array_spec
 
-BATCH_SIZE = 1
+BATCH_SIZE = 32
 BATCH_SIZE_EVAL = 1
 LEARNING_RATE = 2e-4
 DISCOUNT = 0.75
+TRAIN_TEST_RATIO = 0.75
+NUM_STEPS_DATASET = 2
+
 
 global trajs
 trajs = []
@@ -35,10 +38,15 @@ def plot_trajs():
     plt.title('losses')
     plt.savefig('./plot/states_trajs.png')
 
-def plot_loss(losses):
+def plot_loss(losses, num_episodes=0):
     import matplotlib.pyplot as plt
+
     plt.figure()
-    plt.plot(range(len(losses)), losses)
+    # plt.plot(range(len(losses)), losses)
+    if num_episodes > 0:
+        n = len(losses)//num_episodes
+        mean_loss_for_episode = [np.mean(losses[i:i+n]) for i in range(0, len(losses), n)]
+        plt.plot(range(0, len(losses), n), mean_loss_for_episode)
     plt.title('losses')
     plt.savefig('./plot/losses.png')
 
@@ -123,7 +131,8 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer):
     df = read_csv(path, index_col=0)
     global trajs
     trajs = []
-    for _, record in df.iterrows():
+    train_end = len(df) * TRAIN_TEST_RATIO
+    for idx, record in df.iterrows():
 
         state = record.iloc[:state_dim].values  # Convert to numpy array
         action = record["Akcje"]
@@ -138,7 +147,10 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer):
                         tf.constant(reward, dtype=tf.float32, shape=(1,)), 
                         tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
         replay_buffer.add_batch(traj)
-        trajs.append(traj) 
+        trajs.append(traj)
+
+        if  idx > train_end:
+            break
 
 
 def main(argv=None):
@@ -147,70 +159,71 @@ def main(argv=None):
     if argv is None:
         argv = []
 
-    
-    env = ParallelPyEnvironment([create_environment] * BATCH_SIZE)
+    env = ParallelPyEnvironment([create_environment] * 1)
     train_env = tf_py_environment.TFPyEnvironment(env)
+    # env = ParallelPyEnvironment([create_environment] * BATCH_SIZE)
+    # train_env = tf_py_environment.TFPyEnvironment(env)
 
-    eval_py_env = ParallelPyEnvironment([create_environment] * (BATCH_SIZE_EVAL))
-    eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
+    # eval_py_env = ParallelPyEnvironment([create_environment] * (BATCH_SIZE_EVAL))
+    # eval_env = tf_py_environment.TFPyEnvironment(eval_py_env)
 
     agent = configure_agent(train_env)
     agent.initialize()
     # (Optional) Reset the agent's policy state
     agent.train = common.function(agent.train)
 
-    pid = PID()
+    # pid = PID()
     replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
                         data_spec=agent.collect_data_spec,
                         batch_size=train_env.batch_size,
                         max_length=11000)
+    del train_env
 
     print("================================== collecting data ===============================================")
     #collect_data(train_env, pid.control, replay_buffer, steps=4000)
-    get_trajectory_from_csv("./csv_data/trajectory.csv", 6, replay_buffer)
-    plot_trajs()
+    # get_trajectory_from_csv("./csv_data/trajectory(1).csv", 2, replay_buffer)
+    # plot_trajs()
 
     collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    collected_data_checkpoint.save("./replay_buffers/replay_buffer")
+    # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
     # return 0
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
+    collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
 
     # Dataset generates trajectories with shape [Bx2x...]
     dataset = replay_buffer.as_dataset(
         num_parallel_calls=3, 
-        sample_batch_size=8, 
+        sample_batch_size=BATCH_SIZE, 
         num_steps=2).prefetch(3)
 
     iterator = iter(dataset)
 
     print("================================== training ======================================================")
-    
     # Run the training loop
-    num_iterations = 4000
+    num_episodes = 25
+    steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE
+    losses = np.full(num_episodes*steps_per_episode+1, -1)
+    print(num_episodes, steps_per_episode, num_episodes*steps_per_episode)
+    for episode in range(num_episodes):
+        for _ in range(steps_per_episode):
+            # Sample a batch of data from the buffer and update the agent's network.
+            experience, unused_info = next(iterator)
+            train_loss = agent.train(experience).loss
+            step = agent.train_step_counter.numpy()
+            losses[step] = train_loss
+            if step % 200 == 0:
+                #print('step = {0}: loss = {1}'.format(step, train_loss))
+                tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
 
-    losses = np.full(num_iterations, -1)
+            # if step % 50000 == 0:
+            #     # Evaluate the agent's policy once in a while
+            #     avg_return = compute_avg_return(eval_env, agent.policy, num_episodes=5)
+            #     print('step = {0}: Average Return = {1}'.format(step, avg_return))
 
-    for i in (range(num_iterations)):
-
-        # Sample a batch of data from the buffer and update the agent's network.
-        experience, unused_info = next(iterator)
-        train_loss = agent.train(experience).loss
-        losses[i] = train_loss
-        step = agent.train_step_counter.numpy()
-        if step % 200 == 0:
-            #print('step = {0}: loss = {1}'.format(step, train_loss))
-            tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
-
-        if step % 50000 == 0:
-            # Evaluate the agent's policy once in a while
-            avg_return = compute_avg_return(eval_env, agent.policy, num_episodes=5)
-            print('step = {0}: Average Return = {1}'.format(step, avg_return))
-
-    plot_loss(losses)
+    plot_loss(losses, num_episodes)
     saver = policy_saver.PolicySaver(agent.policy)
     saver.save('./policies/DQN')
-    env.close()
-    eval_py_env.close()
+    # env.close()
+    # eval_py_env.close()
     print("done")
 
 
