@@ -6,7 +6,6 @@ import os
 
 #import tensorflow as tf
 import numpy as np
-
 from tf_agents.environments import py_environment
 from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
@@ -62,7 +61,7 @@ class SystemState():
 
 class Environment(py_environment.PyEnvironment):
     SPEEDUP = 10000
-    EPISODE_TIME = 90 * 60 /5 #[s]
+    EPISODE_TIME = 90 * 60  #[s]
     C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
     E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
     COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości
@@ -138,6 +137,7 @@ class Environment(py_environment.PyEnvironment):
                 self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
                 self._T_gen = setpoint_gen(self.clk)
 
+        self.__set_control(0)
         self.__state_update()
         self._episode_ended = False
         self._current_time_step = ts.restart(self.state.as_array())
@@ -174,7 +174,7 @@ class Environment(py_environment.PyEnvironment):
         return comfort * self.C_COEF + energy * self.E_COEF
 
     def __state_update(self):
-        self.state.T_sp = next(self._T_gen)
+        self.state.T_sp = next(self._T_gen) - self.lab.T1
         self.state.T = self.lab.T1
         #self.state
 

@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import psutil
-import random
-
+from tf_agents.trajectories import time_step as ts
+from tqdm import tqdm
 
 def log_memory_usage():
     process = psutil.Process(os.getpid())
@@ -24,7 +24,7 @@ def main():
     log_memory_usage()
 
     # Load the saved policy
-    loaded_policy = tf.compat.v2.saved_model.load('./policies/DQN')
+    loaded_policy = tf.saved_model.load('./policies/SAC')
 
     rewards = []
     T = []
@@ -33,24 +33,37 @@ def main():
     times = []
     
     log_memory_usage()
- 
-    for _ in range(1):
-        time_step = env.reset()
-        action_step = loaded_policy.action(time_step)
-        while not time_step.is_last():
+    
+    for i in tqdm(range(0, 10, 2)):
+        try:
+            loaded_policy = tf.saved_model.load(f'./policies/SAC{i}')
+            time_step = env.reset()
+
             action_step = loaded_policy.action(time_step)
-            time_step = env.step(action_step.action)
-            state, reward, done, info = time_step.observation, time_step.reward, time_step.step_type, 0
-            rewards.append(reward)
-            T.append(state[:, 0])
-            T_sp.append(state[:, 1]+state[:, 0])
-            controls.append(action_step.action)
-            times.append(env.envs[0].time)
+            while not time_step.is_last():
+                action_step = loaded_policy.action(time_step)
+                time_step = env.step(action_step.action)
+
+                time_step = ts.TimeStep(
+                        step_type=tf.squeeze(time_step.step_type, [0]),
+                        reward=tf.squeeze(time_step.reward, [0]),
+                        discount=time_step.discount,
+                        observation= tf.reshape(time_step.observation, (1, 2))
+                        )
+
+                state, reward, done, info = time_step.observation, time_step.reward, time_step.step_type, 0
+                rewards.append(reward)
+                T.append(state[:, 0])
+                T_sp.append(state[:, 1]+state[:, 0])
+                controls.append(action_step.action)
+                times.append(env.envs[0].time)
+        except KeyboardInterrupt:
+            tqdm.write(f"next {i+1}")
 
     T = np.array(T).reshape(-1)
     T_sp = np.array(T_sp).reshape(-1)
     rewards = np.array(rewards)
-    times = np.array(times)
+    times = np.arange(len(rewards))#np.array(times)
 
     correct = np.where(np.abs(T_sp - T) <= 1)[0]
     incorrect = np.where(np.abs(T_sp - T) > 1)[0]
@@ -68,15 +81,14 @@ def main():
     plt.savefig('./plot/temperature.png')
 
     plt.figure()
-    plt.plot(times, rewards)
+    plt.plot(times, tf.squeeze(rewards))
     plt.title('rewards')
     plt.savefig('./plot/rewards.png')
 
     plt.figure()
-    plt.plot(times, controls)
+    plt.plot(times, tf.squeeze(controls))
     plt.title('controls')
     plt.savefig('plot/controls.png')
 
 if __name__ == '__main__':
     main()
-    #test()
