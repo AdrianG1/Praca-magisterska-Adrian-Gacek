@@ -42,26 +42,27 @@ class SystemState():
 
 
     def __init__(self):
-        self.T_sp = 0   # nastawiona wartość temperatury
-        self.T = 0      # aktualna wartość temperatury
+        #self.T_sp = 0      # nastawiona wartość temperatury
+        self.T = 0          # aktualna wartość temperatury
+        self.T_diff = 0     # błąd sterowania
         # self.stdev = 0  # odchylenie standardowe
         # self.skew = 0   # skośność
         # self.diff = 0   # pochodna
         # self.eps = 0    # uchyb regulacji
 
     def __str__(self):
-        return f"State: [T_sp:{self.T_sp:.02f},T:{self.T:.02f}]"
+        return f"State: [T_diff:{self.T_diff:.02f},T:{self.T:.02f}]"
 
     def as_tensor(self):
-        return tf.constant([self.T, self.T_sp], dtype=tf.float32)
+        return tf.constant([self.T, self.T_diff], dtype=tf.float32)
 
     def as_array(self):
-        return np.array([self.T, self.T_sp], dtype=np.float32)
+        return np.array([self.T, self.T_diff], dtype=np.float32)
 
 
 class Environment(py_environment.PyEnvironment):
-    SPEEDUP = 10000
-    EPISODE_TIME = 90 * 60  #[s]
+    SPEEDUP = 100
+    EPISODE_TIME = 300 * 60 #[s]
     C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
     E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
     COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości
@@ -74,18 +75,8 @@ class Environment(py_environment.PyEnvironment):
         # parametry symulacji
         self.discret = discret # True jeśli akcje są dyskretne
 
-        # Inicjalizacja cyfrowego bliźniaka
-        lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
-        self.lab = lab()
-        # self.clk = tclab.clock(self.EPISODE_TIME)
-        self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
-
-        # inicjalizacja generatora nastaw
-        self._T_gen = setpoint_gen(self.clk)
-
         # inicjalizacja stanu początkowego
         self.state = SystemState()
-        self.__state_update()
 
         # inicjalizacja specyfikacji
         self.__gen_spec()
@@ -100,7 +91,10 @@ class Environment(py_environment.PyEnvironment):
 
 
     def __del__(self):
-        self.lab.close()
+        try:
+            self.lab.close()
+        except AttributeError:
+            pass
 
     def reset(self):
         """Return initial_time_step."""
@@ -131,7 +125,10 @@ class Environment(py_environment.PyEnvironment):
 
         with open(os.devnull, 'w') as f:
             with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-                self.lab.close()
+                try:
+                    self.lab.close()
+                except AttributeError:
+                    pass
                 lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
                 self.lab = lab()
                 self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
@@ -167,14 +164,14 @@ class Environment(py_environment.PyEnvironment):
         return self._current_time_step
 
     def __calculate_reward(self, action):
-        diff = abs(self.state.T - self.state.T_sp)
+        diff = abs(self.state.T_diff) #abs(self.state.T - self.state.T_sp)
         comfort = -diff
         # Wykorzystana energia TODO liniowo?
         energy = action / 100
         return comfort * self.C_COEF + energy * self.E_COEF
 
     def __state_update(self):
-        self.state.T_sp = next(self._T_gen) - self.lab.T1
+        self.state.T_diff = next(self._T_gen) - self.lab.T1
         self.state.T = self.lab.T1
         #self.state
 
@@ -189,6 +186,7 @@ class Environment(py_environment.PyEnvironment):
         if self.discret:
             self._action_spec = array_spec.BoundedArraySpec(
                 shape=(), dtype=np.float32, minimum=0, maximum=self.NUM_OF_ACTIONS-1, name='action')
+            # self._action_spec = array_spec.DiscreteTensorSpec(dtype=tf.int32, num_values=NUM_OF_ACTIONS)  # Example for a binary action space
         else:
             self._action_spec = array_spec.BoundedArraySpec(
                 shape=(), dtype=np.float32, minimum=0, maximum=100.0, name='action')
