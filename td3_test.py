@@ -3,6 +3,7 @@ import tensorflow as tf
 from tf_agents.environments import tf_py_environment
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import os
 import psutil
 from tf_agents.trajectories import time_step as ts
@@ -23,8 +24,6 @@ def main():
     env = tf_py_environment.TFPyEnvironment(create_environment())
     log_memory_usage()
 
-    # Load the saved policy
-    loaded_policy = tf.saved_model.load('./policies/td3')
 
     rewards = []
     T = []
@@ -33,13 +32,10 @@ def main():
     times = []
     
     log_memory_usage()
-
-    policy_state = [tf.constant([[0 for _ in range(40)]], dtype=tf.float32), tf.constant([[0 for _ in range(40)]], dtype=tf.float32)]
-    for i in tqdm(range(14, 15, 1)):
+    for i in tqdm(range(10, 20,3)):
         try:
-            loaded_policy = tf.saved_model.load(f'./policies/td3{i}')
-            policy_state = [tf.constant([[0 for _ in range(40)]], dtype=tf.float32), tf.constant([[0 for _ in range(40)]], dtype=tf.float32)]
-
+            loaded_policy = tf.saved_model.load(f'./policies/CQL{i}')
+            policy_state = loaded_policy.get_initial_state(batch_size=1)
             time_step = env.reset()
             time_step = ts.TimeStep(
                     step_type=tf.reshape(time_step.step_type, (1, )),
@@ -72,7 +68,7 @@ def main():
 
     T = np.array(T).reshape(-1)
     T_sp = np.array(T_sp).reshape(-1)
-    rewards = np.array(rewards)
+    rewards = np.array(rewards).reshape(-1)
     times = np.arange(len(rewards))#np.array(times)
 
     correct = np.where(np.abs(T_sp - T) <= 1)[0]
@@ -80,7 +76,7 @@ def main():
     T_correct = T[correct]
     T_incorrect = T[incorrect]
 
-    plt.figure()
+    plt.figure(figsize=(40, 20))
     plt.plot(times, T)
     plt.scatter(times[correct], T_correct, c='g')
     plt.scatter(times[incorrect], T_incorrect, c='r')
@@ -90,15 +86,19 @@ def main():
     plt.title('temperature')
     plt.savefig('./plot/temperature.png')
 
-    plt.figure()
+    plt.figure(figsize=(40, 20))
     plt.plot(times, tf.squeeze(rewards))
     plt.title('rewards')
     plt.savefig('./plot/rewards.png')
 
-    plt.figure()
+    plt.figure(figsize=(40, 20))
     plt.plot(times, tf.squeeze(controls))
     plt.title('controls')
     plt.savefig('plot/controls.png')
+
+    pd.DataFrame({"time":times, "T": T, "T_diff": T_sp, "rewards":rewards}).to_csv("./csv_data/test_policy.csv")
+
+
 
 if __name__ == '__main__':
     main()
