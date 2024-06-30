@@ -61,7 +61,7 @@ class SystemState():
 
 class Environment(py_environment.PyEnvironment):
     SPEEDUP = 100
-    EPISODE_TIME = 300 * 60 #[s]
+    EPISODE_TIME = 60 * 60 #[s]
     C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
     E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
     COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości

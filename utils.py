@@ -33,7 +33,9 @@ def evaluate_policy(agent, test_buffer, num_test_steps=1000):
 
 def abnormalize_state(state):
     """ nienormalizacja stanu (odwrócenie normalizacji)"""
-    return np.stack([state[..., 0]*100,(state[..., 1]-0.5)*200]) 
+    T_diff = (state[..., 1]-0.5)*200
+    T = state[..., 0]*100
+    return np.reshape(np.concatenate([T,T_diff], axis=-1), state.shape) 
 
 
 def discretize(action, num_actions=5):
