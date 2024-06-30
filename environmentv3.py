@@ -11,11 +11,13 @@ from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.trajectories.time_step import TimeStep
 import contextlib
-
+from utils import abnormalize_state
 
 # genertor nastaw temperatury
 def setpoint_gen(clk):
-    rng = random.Random(123141)
+    # rng = random.Random(123141)
+    rng = random.Random(2137)
+    
     lower_constraint = 200  # minimalny okres zmian nastaw temperatury [s]
     upper_constraint = 600  # maksymalny okres zmian nastaw temperatury [s]
     min_T = 30              # minimalna wartość nastaw temperatury [*C]
@@ -45,10 +47,7 @@ class SystemState():
         #self.T_sp = 0      # nastawiona wartość temperatury
         self.T = 0          # aktualna wartość temperatury
         self.T_diff = 0     # błąd sterowania
-        # self.stdev = 0  # odchylenie standardowe
-        # self.skew = 0   # skośność
-        # self.diff = 0   # pochodna
-        # self.eps = 0    # uchyb regulacji
+
 
     def __str__(self):
         return f"State: [T_diff:{self.T_diff:.02f},T:{self.T:.02f}]"
@@ -62,11 +61,10 @@ class SystemState():
 
 class Environment(py_environment.PyEnvironment):
     SPEEDUP = 100
-    EPISODE_TIME = 60 * 60 #[s]
+    EPISODE_TIME = 300 * 60 #[s]
     C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
     E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
     COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości
-    MEM_LEN = 10            # wielkość pamięci przechoowującej ostatnie temperatury
     NUM_OF_ACTIONS = 5      # liczba akcji
     STEP = 0.5
 
@@ -75,6 +73,7 @@ class Environment(py_environment.PyEnvironment):
         # parametry symulacji
         self.discret = discret # True jeśli akcje są dyskretne
         self.NUM_OF_ACTIONS = num_actions
+
         # inicjalizacja stanu początkowego
         self.state = SystemState()
 
@@ -97,12 +96,12 @@ class Environment(py_environment.PyEnvironment):
             pass
 
     def reset(self):
-        """Return initial_time_step."""
+        """Zwraca pierwszy time_step."""
         self._current_time_step = self._reset()
         return self._current_time_step
 
     def step(self, action):
-        """Apply action and return new time_step."""
+        """Aplikuje akcję i zwraca time_step."""
         if self._current_time_step is None:
             return self.reset()
         self._current_time_step = self._step(action)
@@ -125,10 +124,14 @@ class Environment(py_environment.PyEnvironment):
 
         with open(os.devnull, 'w') as f:
             with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-                try:
+
+                # zamyka poprzednie laboratorium jeśli istnieje
+                try:    
                     self.lab.close()
                 except AttributeError:
                     pass
+
+                # Otwieram nowe laboratorium z nowym zegarem i generatorem nastaw
                 lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
                 self.lab = lab()
                 self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
@@ -145,9 +148,9 @@ class Environment(py_environment.PyEnvironment):
         try:
             self.time = next(self.clk)
             self.done = (self.time >= self.EPISODE_TIME)
-        except StopIteration:
+        except StopIteration: # Jeśli czas epizodu się skończył
             self.done = True
-        # print(self.time, self.state, self.done, action)
+
         self.__set_control(action)
         self.__state_update()
         self.reward = self.__calculate_reward(action)
@@ -164,29 +167,37 @@ class Environment(py_environment.PyEnvironment):
         return self._current_time_step
 
     def __calculate_reward(self, action):
+        """ Wyznaczanie nagrody """
+
+        # komfort temperaturowy
         diff = abs(self.state.T_diff) #abs(self.state.T - self.state.T_sp)
         comfort = -diff
-        # Wykorzystana energia TODO liniowo?
+        
+        # zużycie energii
         energy = action / 100
         return comfort * self.C_COEF + energy * self.E_COEF
 
     def __state_update(self):
-        self.state.T_diff = next(self._T_gen) - self.lab.T1
-        self.state.T = self.lab.T1
+        """aktualizacja stanów normalizacja do wartości 0-1"""
+        self.state.T = self.lab.T1 / 100    
+        setpoint =  next(self._T_gen) / 100
+        self.state.T_diff = (setpoint - self.state.T) / 2 + 0.5
+
         #self.state
 
     def __set_control(self, action):
+        """ Ustawianie sterowania """
         if self.discret:
             self.lab.Q1((100 / (self.NUM_OF_ACTIONS - 1)) * action)
         else:
             self.lab.Q1(max(min(100, action), 0))
 
     def __gen_spec(self):
+        """ generowanie specyfikacji określającej parametry środowiska """
 
         if self.discret:
             self._action_spec = array_spec.BoundedArraySpec(
                 shape=(), dtype=np.float32, minimum=0, maximum=self.NUM_OF_ACTIONS-1, name='action')
-            # self._action_spec = array_spec.DiscreteTensorSpec(dtype=tf.int32, num_values=NUM_OF_ACTIONS)  # Example for a binary action space
         else:
             self._action_spec = array_spec.BoundedArraySpec(
                 shape=(), dtype=np.float32, minimum=0, maximum=100.0, name='action')

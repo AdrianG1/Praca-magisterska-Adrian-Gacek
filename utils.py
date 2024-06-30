@@ -8,20 +8,11 @@ from pandas import read_csv
 from tf_agents.trajectories import time_step as ts
 from tf_agents.trajectories import Trajectory
 from tf_agents.trajectories.time_step import tensor_spec
-import pickle
-
-def save_study(study, filename):
-    with open(filename, 'wb') as f:
-        pickle.dump(study, f)
-
-# Funkcja do wczytywania stanu optymalizacji
-def load_study(filename):
-    with open(filename, 'rb') as f:
-        return pickle.load(f)
 
 DISCOUNT=0.75
 
 def evaluate_policy(agent, test_buffer, num_test_steps=1000):
+    """Evaluacja polityki poprzez porównanie ze sterowaniem PID"""
     difference = 0
     policy_state = agent.policy.get_initial_state(batch_size=1)
     for i in range(min(len(test_buffer), num_test_steps)):
@@ -40,13 +31,25 @@ def evaluate_policy(agent, test_buffer, num_test_steps=1000):
     return difference
 
 
+def abnormalize_state(state):
+    """ nienormalizacja stanu (odwrócenie normalizacji)"""
+    return np.stack([state[..., 0]*100,(state[..., 1]-0.5)*200]) 
+
+
 def discretize(action, num_actions=5):
-    return tf.constant((max(min(action, 100), 0)+(50/(num_actions-1)) // (100/(num_actions-1))), dtype=tf.float32)
+    """dyskretyzacja dla DQN"""
+
+    a = (50/(num_actions-1))
+    b = (100/(num_actions-1))
+    clipped_action = max(min(action, 100), 0)
+    return tf.constant((clipped_action + a) // b, dtype=tf.float32)
     
 def undiscretize(action, num_actions=5):
+    """odwrócenie dyskretyzacji dla DQN"""
     return tf.constant(100/(num_actions-1) * action)    
 
 def plot_trajs(trajs):
+    """ Plot kontrolny wczytywanej trajektorii"""
     print(trajs)
     states = np.squeeze(np.array([traj.observation for traj in trajs]))
     actions = np.squeeze(np.array([traj.action for traj in trajs]))
@@ -61,6 +64,7 @@ def plot_trajs(trajs):
 
 
 def get_data_spec():
+    """ generacja specyfikacji trajektorii z pominięciem agenta """
     return Trajectory(  tensor_spec.TensorSpec(shape=(), dtype=np.int32, name='step_type'), 
                         tensor_spec.TensorSpec(shape=(2,), dtype=np.float32, name='observation'),
                         tensor_spec.BoundedTensorSpec(shape=(), dtype=np.float32, minimum=0, maximum=100.0, name='action'), 
@@ -73,23 +77,19 @@ def get_data_spec():
 
 def plot_loss(losses, num_episodes=0):
     plt.figure()
-    # plt.plot(range(len(losses)), losses)
+    plt.plot(range(len(losses)), losses, "b")
     if num_episodes > 0:
         n = len(losses)//num_episodes
         mean_loss_for_episode = [np.mean(losses[i:i+n]) for i in range(0, len(losses), n)]
-        plt.plot(range(0, len(losses), n), mean_loss_for_episode)
+        plt.plot(range(0, len(losses), n), mean_loss_for_episode, "r", linewidth=2)
     plt.title('losses')
     plt.savefig('./plot/losses.png')
 
 def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, TRAIN_TEST_RATIO):
-    from pandas import read_csv
+    """ Wczytywanie danych z csv """
     df = read_csv(path, index_col=0)
 
-    global trajs
     trajs = []
-    
-    global actions_representation
-    actions_representation = {}
 
     train_end = len(df) * TRAIN_TEST_RATIO
     for idx, record in df.iterrows():
@@ -100,7 +100,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, TRAIN_T
         continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
 
         traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
-                        tf.expand_dims(tf.constant(state*100, dtype=tf.float32), axis=0),
+                        tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
                         continous_action, 
                         (), 
                         tf.constant(1, dtype=tf.int32, shape=(1,)),
@@ -109,12 +109,19 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, TRAIN_T
         trajs.append(traj)
 
 
-        if  idx < train_end:    # TODO przetestować idx < train_end
+        if  idx < train_end: 
             replay_buffer.add_batch(traj)
         else:
             test_buffer.append(traj)
 
+    return trajs
+
+
 class CustomReplayBuffer(UserList):
+    """
+    Alternatywny replay buffer, który ma za zadanie bardziej równomiernie wykorzystywać dane uczące
+    wykorzystując w losowej kolejności wszystkie dane tyle samo razy.
+    """
     def __init__(self, batch_size=32, num_steps=2):
         super().__init__([])
         self._batch_size=batch_size 
@@ -132,8 +139,6 @@ class CustomReplayBuffer(UserList):
             np.random.shuffle(indexes)
 
             while idx < indexes.shape[0]: # po kolei po przetasowanych indeksach
-
-                
 
                 # jeśli koniec batcha nie przekracza zakresu indeksów
                 if idx + self._batch_size < indexes.shape[0]:
@@ -168,6 +173,7 @@ class CustomReplayBuffer(UserList):
                 next_step_type  = np.ndarray((len(batch), len(batch[0])))
                 reward          = np.ndarray((len(batch), len(batch[0])))
                 discount        = np.ndarray((len(batch), len(batch[0])))
+
                 for b in range(len(batch)):
                     for s in range(len(batch[0])):
                         step_type     [b, s] = batch[b][s].step_type       

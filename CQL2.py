@@ -2,7 +2,6 @@ import tensorflow as tf
 from environmentv3 import Environment
 import os
 from utils import evaluate_policy, plot_loss, plot_trajs
-# from SAC_RNN import get_trajectory_from_csv
 
 from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.agents.cql import cql_sac_agent
@@ -17,7 +16,6 @@ import functools
 from tf_agents.system import multiprocessing
 import warnings
 warnings.filterwarnings('ignore')
-from tf_agents.environments import ParallelPyEnvironment
 from tf_agents.utils import common
 from tf_agents.policies import policy_saver
 from tqdm import tqdm
@@ -25,28 +23,36 @@ from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
 
 BATCH_SIZE = 32
-DISCOUNT = 0.75*0
+DISCOUNT = 0.75
 TRAIN_TEST_RATIO = 0.75
 
 num_episodes = 25
 train_sequence_length = 20
-batch_size = 256 # @param {type:"integer"}
 
-critic_learning_rate = 3e-4 # @param {type:"number"}
-actor_learning_rate = 1.21e-5 # @param {type:"number"}
-alpha_learning_rate = 3e-5 # @param {type:"number"}
+critic_learning_rate = 3e-4 
+actor_learning_rate = 1.21e-5
+alpha_learning_rate = 3e-5 
 
-target_update_tau = 0.0017 # @param {type:"number"}
-target_update_period = 10 # @param {type:"number"}
-gamma = 0.99 # @param {type:"number"}
-reward_scale_factor = 1.0 # @param {type:"number"}
+cql_alpha=0.78,
+include_critic_entropy_term=True,
+num_cql_samples=12,
+use_lagrange_cql_alpha=False,
 
-actor_fc_layer_params = (75, 75, 75, 75)
-critic_joint_fc_layer_params =(75, 75, 75, 75)
+target_update_tau = 0.0017 
+target_update_period = 10 
+gamma = 0.87 
+reward_scale_factor = 1.0 
 
+actor_input_fc_layer_params=(223, 67)
+actor_lstm_size=(97,)
+actor_output_fc_layer_params=(106, 100)
+actor_activation_fn=tf.keras.activations.relu
 
-global trajs
-trajs = []
+critic_joint_fc_layer_params=(65, 247),
+critic_lstm_size=(105,),
+critic_output_fc_layer_params=(199, 100),
+critic_activation_fn=tf.keras.activations.relu
+
 
 
 def configure_agent(env):
@@ -60,11 +66,11 @@ def configure_agent(env):
         actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
                                 env.observation_spec(),
                                 env.action_spec(),
-                                input_fc_layer_params=(223, 67),
+                                input_fc_layer_params=actor_input_fc_layer_params,
                                 input_dropout_layer_params=None,
-                                lstm_size=(97,),
-                                output_fc_layer_params=(106, 100),
-                                activation_fn=tf.keras.activations.relu)
+                                lstm_size=actor_lstm_size,
+                                output_fc_layer_params=actor_output_fc_layer_params,
+                                activation_fn=actor_activation_fn)
 
         # combined_actor = sequential.Sequential([flatten, actor_net])
         
@@ -74,10 +80,10 @@ def configure_agent(env):
             observation_conv_layer_params=None,
             observation_fc_layer_params=None,
             action_fc_layer_params=None,
-            joint_fc_layer_params=(65, 247),
-            lstm_size=(105,),
-            output_fc_layer_params=(199, 100),
-            activation_fn=tf.keras.activations.relu
+            joint_fc_layer_params=critic_joint_fc_layer_params,
+            lstm_size=critic_lstm_size,
+            output_fc_layer_params=critic_output_fc_layer_params,
+            activation_fn=critic_activation_fn
         )
         # combined_critic = sequential.Sequential([flatten, critic_net])
 
@@ -93,14 +99,14 @@ def configure_agent(env):
                     learning_rate=critic_learning_rate),
                 alpha_optimizer=tf.keras.optimizers.Adam(
                     learning_rate=alpha_learning_rate),
-                cql_alpha=0.78,
-                include_critic_entropy_term=True,
-                num_cql_samples=12,
-                use_lagrange_cql_alpha=False,
+                cql_alpha=cql_alpha,
+                include_critic_entropy_term=include_critic_entropy_term,
+                num_cql_samples=num_cql_samples,
+                use_lagrange_cql_alpha=use_lagrange_cql_alpha,
                 target_update_tau=target_update_tau,
                 target_update_period=target_update_period,
                 td_errors_loss_fn=tf.math.squared_difference,
-                gamma=0.87)
+                gamma=gamma)
             
     
         agent.initialize()
@@ -113,9 +119,6 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
 
     global trajs
     trajs = []
-    
-    global actions_representation
-    actions_representation = {}
 
     train_end = len(df) * TRAIN_TEST_RATIO
     for idx, record in df.iterrows():
@@ -126,7 +129,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
         continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
 
         traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
-                        tf.expand_dims(tf.constant(state*100, dtype=tf.float32), axis=0),
+                        tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
                         continous_action, 
                         (), 
                         tf.constant(1, dtype=tf.int32, shape=(1,)),
@@ -135,7 +138,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
         trajs.append(traj)
 
 
-        if  idx < train_end:    # TODO przetestować idx < train_end
+        if  idx < train_end:  
             replay_buffer.add_batch(traj)
         else:
             test_buffer.append(traj)

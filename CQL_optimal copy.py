@@ -49,8 +49,8 @@ def evaluate_policy(agent, num_test_steps=1000):
         policy_state = action_step.state
 
         difference += abs(float((experience.action - action_step.action).numpy()[0]))
-        if difference > 5000:
-            return 5000
+        if difference > 15000:
+            return 15000
     return difference 
 
 
@@ -277,5 +277,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    main()
-    # multiprocessing.handle_main(functools.partial(main))
+    # main()
+    multiprocessing.handle_main(functools.partial(main))

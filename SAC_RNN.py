@@ -149,7 +149,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
         continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
 
         traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
-                        tf.expand_dims(tf.constant(state*100, dtype=tf.float32), axis=0),
+                        tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
                         continous_action, 
                         (), 
                         tf.constant(1, dtype=tf.int32, shape=(1,)),

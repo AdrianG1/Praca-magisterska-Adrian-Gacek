@@ -8,6 +8,7 @@ import os
 import psutil
 from tf_agents.trajectories import time_step as ts
 from tqdm import tqdm
+from utils import abnormalize_state
 
 def log_memory_usage():
     process = psutil.Process(os.getpid())
@@ -60,13 +61,16 @@ def main():
                         )
 
                 state, reward, done, info = time_step.observation, time_step.reward, time_step.step_type, 0
+
                 rewards.append(reward)
-                T.append(state[:, 0])
-                T_sp.append(state[:, 1]+state[:, 0])
+                real_state = abnormalize_state(state)
+                T.append(real_state[:, 0])
+                T_sp.append(real_state[:, 1]+real_state[:, 0])
                 controls.append(action_step.action)
                 times.append(env.envs[0].time)
         except KeyboardInterrupt:
             tqdm.write(f"next {i+1}")
+
 
     T = np.array(T).reshape(-1)
     T_sp = np.array(T_sp).reshape(-1)
