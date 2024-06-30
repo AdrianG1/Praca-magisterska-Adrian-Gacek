@@ -3,10 +3,10 @@ import numpy as np
 
 class PID():
     Kc   = 6.0 
-    tauI = 75.0
-    tauD = 0.0 
+    tauI = 75.0 # sec
+    tauD = 0.0  # sec
 
-    windup_guard = 200
+    windup_guard = 2000
 
     prev_y = 0
     epsilon_integral = 0
@@ -17,10 +17,12 @@ class PID():
         y, sp = observation[0], observation[1]+observation[0]
         error = observation[1]
 
+
+
         dt = time - self.prev_t
         dy = y - self.prev_y
 
-        self.epsilon_integral += error * dt
+        self.epsilon_integral += error# * dt
         # if self.epsilon_integral < -self.windup_guard:
         #     self.epsilon_integral = -self.epsilon_integral
         # elif self.epsilon_integral > self.windup_guard:
@@ -30,8 +32,5 @@ class PID():
 
         control = self.Kc * (error + self.epsilon_integral/self.tauI + self.tauD*derivative) 
         control = min(100, max(control, 0))
-
-        self.prev_t = time
-        self.prev_y = y
 
         return control

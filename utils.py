@@ -32,7 +32,7 @@ def evaluate_policy(agent, test_buffer, num_test_steps=1000):
 
 
 def abnormalize_state(state):
-    """ nienormalizacja stanu (odwrócenie normalizacji)"""
+    """ nienormalizacja stanu """
     T_diff = (state[..., 1]-0.5)*200
     T = state[..., 0]*100
     return np.reshape(np.concatenate([T,T_diff], axis=-1), state.shape) 
@@ -52,7 +52,6 @@ def undiscretize(action, num_actions=5):
 
 def plot_trajs(trajs):
     """ Plot kontrolny wczytywanej trajektorii"""
-    print(trajs)
     states = np.squeeze(np.array([traj.observation for traj in trajs]))
     actions = np.squeeze(np.array([traj.action for traj in trajs]))
     plt.figure()

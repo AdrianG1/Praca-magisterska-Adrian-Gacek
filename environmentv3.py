@@ -11,13 +11,11 @@ from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.trajectories.time_step import TimeStep
 import contextlib
-from utils import abnormalize_state
+
 
 # genertor nastaw temperatury
 def setpoint_gen(clk):
-    # rng = random.Random(123141)
-    rng = random.Random(2137)
-    
+    rng = random.Random(123141)
     lower_constraint = 200  # minimalny okres zmian nastaw temperatury [s]
     upper_constraint = 600  # maksymalny okres zmian nastaw temperatury [s]
     min_T = 30              # minimalna wartość nastaw temperatury [*C]
@@ -179,9 +177,8 @@ class Environment(py_environment.PyEnvironment):
 
     def __state_update(self):
         """aktualizacja stanów normalizacja do wartości 0-1"""
-        self.state.T = self.lab.T1 / 100    
-        setpoint =  next(self._T_gen) / 100
-        self.state.T_diff = (setpoint - self.state.T) / 2 + 0.5
+        self.state.T = self.lab.T1 / 100             
+        self.state.T_diff = (next(self._T_gen) - self.state.T) / 200 + 0.5
 
         #self.state
 

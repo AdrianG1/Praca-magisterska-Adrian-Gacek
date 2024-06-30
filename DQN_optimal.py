@@ -160,7 +160,7 @@ def get_trajectory_from_csv(path, state_dim, train_buffer, test_buffer, TRAIN_TE
     trajs = []
     train_end = len(df) * TRAIN_TEST_RATIO
     for idx, record in df.iterrows():
-        state = record.iloc[:state_dim].values*100  # Convert to numpy array
+        state = record.iloc[:state_dim].values  # Convert to numpy array
         action = tf.constant(record["Akcje"], dtype=tf.float32)
         reward = record["Nagrody"]
         continous_action = tf.expand_dims(discretize(action), axis=-1)

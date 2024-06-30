@@ -1,17 +1,14 @@
 from PID import PID
 from environmentv3 import Environment
-
+from utils import plot_trajs, abnormalize_state
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 
-def discretize(action):
-    return (min(max(action, 100), 0)+12) // 25
-    
-
 def collect_step(environment, control_function):
     time_step = environment.current_time_step()
-    action = control_function(time_step.observation, environment.time)
+    action = control_function(abnormalize_state(time_step.observation),
+                               environment.time)
     next_time_step = environment.step(action)
 
     if next_time_step.is_last():
@@ -45,8 +42,9 @@ def analyze_data(data):
 
 def main(argv=None):
 
-    # Inicjalizacja środowiska i  regulatora
+    # Inicjalizacja środowiska i regulatora
     env = Environment(discret=False)
+    env.reset()
     pid = PID()
 
     # Zbieranie danych
@@ -54,29 +52,21 @@ def main(argv=None):
     del env
 
     # Konwersja na DataFrame
-    states = pd.DataFrame(states, columns=["T", "T_zadana"])
+    states = pd.DataFrame(states, columns=["T", "T_błąd"])
     rewards = pd.DataFrame(rewards, columns=["Nagrody"])
     actions = pd.DataFrame(actions, columns=["Akcje"])
 
-    states.to_csv("./csv_data/states.csv")
-    rewards.to_csv("./csv_data/rewards.csv")
-    actions.to_csv("./csv_data/actions.csv")
-
     # Rozszerzenie przestrzeni stanu
-    states["T_błąd"] = states["T_zadana"] - states["T"]
-    states['T_średnia']  = states['T'].rolling(window=10,center=True).mean()
-    states['T_wariancja'] = states['T'].rolling(window=10,center=True).std()
-    states['T_skośność']  = states['T'].rolling(window=10,center=True).skew()
+    #states["T_błąd"] = states["T_zadana"] - states["T"]
 
-    states['T_zadana_wariancja'] = states['T_zadana'].rolling(window=10,center=True).std()
-    states['T_zadana_skośność']  = states['T_zadana'].rolling(window=10,center=True).skew()
+    # states.to_csv("./csv_data/states.csv")
+    # rewards.to_csv("./csv_data/rewards.csv")
+    # actions.to_csv("./csv_data/actions.csv")
 
+    #states = states.drop(["T_zadana"], axis=1)
+    # rewards["Nagrody"] = states["T_błąd"].abs()
 
-
-    next_states = pd.DataFrame(states[1:])
-    next_states = next_states.rename(columns={"T":"T'", "T_zadana":"T_zadana'"})
-
-    trajectory = pd.concat((states[:-1], rewards[:-1], actions[:-1], next_states), axis=1)
+    trajectory = pd.concat((states, rewards, actions), axis=1)
 
     print("\n Trajektoria \n")
     analyze_data(trajectory) 
@@ -84,17 +74,13 @@ def main(argv=None):
     trajectory = trajectory.drop_duplicates()
 
     scaler = StandardScaler()
-    trajectory[["T", 
-                "T_zadana", 
-                "T'", 
-                "T_zadana'"]] = trajectory[["T", 
-                                            "T_zadana", 
-                                            "T'", 
-                                            "T_zadana'"]] / 100
     trajectory[['Nagrody']] = scaler.fit_transform(trajectory[['Nagrody']])
 
     print(" Oczyszczona, znormalizowana trajektoria")
     analyze_data(trajectory) 
+
+    plot_trajs(trajectory)
+    trajectory.to_csv("./csv_data/trajectory.csv")
 
 
 if __name__ == '__main__':
