@@ -1,10 +1,9 @@
 import tensorflow as tf
 from environmentv3 import Environment
 import os
-from utils import evaluate_policy, CustomReplayBuffer, plot_loss, plot_trajs
+from utils import evaluate_policy, plot_loss, plot_trajs
 # from SAC_RNN import get_trajectory_from_csv
 
-from tf_agents.networks import expand_dims_layer, sequential
 from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.agents.cql import cql_sac_agent
 from tf_agents.networks import actor_distribution_rnn_network
@@ -23,25 +22,21 @@ from tf_agents.utils import common
 from tf_agents.policies import policy_saver
 from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
-from tf_agents.trajectories.time_step import TimeStep, tensor_spec
 from tf_agents.train.utils import strategy_utils
-from tf_agents.agents.sac import tanh_normal_projection_network
 
-BATCH_SIZE = 64
-LEARNING_RATE = 2e-4
-DISCOUNT = 0.75
+BATCH_SIZE = 32
+DISCOUNT = 0.75*0
 TRAIN_TEST_RATIO = 0.75
-NUM_STEPS_DATASET = 2
 
-num_episodes = 50
-train_sequence_length = 12
+num_episodes = 25
+train_sequence_length = 20
 batch_size = 256 # @param {type:"integer"}
 
-critic_learning_rate = 3e-3 # @param {type:"number"}
-actor_learning_rate = 3e-4 # @param {type:"number"}
-alpha_learning_rate = 3e-4 # @param {type:"number"}
+critic_learning_rate = 3e-4 # @param {type:"number"}
+actor_learning_rate = 1.21e-5 # @param {type:"number"}
+alpha_learning_rate = 3e-5 # @param {type:"number"}
 
-target_update_tau = 0.005 # @param {type:"number"}
+target_update_tau = 0.0017 # @param {type:"number"}
 target_update_period = 10 # @param {type:"number"}
 gamma = 0.99 # @param {type:"number"}
 reward_scale_factor = 1.0 # @param {type:"number"}
@@ -65,11 +60,11 @@ def configure_agent(env):
         actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
                                 env.observation_spec(),
                                 env.action_spec(),
-                                input_fc_layer_params=(200, 100),
+                                input_fc_layer_params=(223, 67),
                                 input_dropout_layer_params=None,
-                                lstm_size=(75,),
-                                output_fc_layer_params=(200, 100),
-                                activation_fn=tf.keras.activations.selu)
+                                lstm_size=(97,),
+                                output_fc_layer_params=(106, 100),
+                                activation_fn=tf.keras.activations.relu)
 
         # combined_actor = sequential.Sequential([flatten, actor_net])
         
@@ -79,9 +74,10 @@ def configure_agent(env):
             observation_conv_layer_params=None,
             observation_fc_layer_params=None,
             action_fc_layer_params=None,
-            joint_fc_layer_params=None,
-            lstm_size=(75,),
-            output_fc_layer_params=(200, 100)
+            joint_fc_layer_params=(65, 247),
+            lstm_size=(105,),
+            output_fc_layer_params=(199, 100),
+            activation_fn=tf.keras.activations.relu
         )
         # combined_critic = sequential.Sequential([flatten, critic_net])
 
@@ -97,14 +93,14 @@ def configure_agent(env):
                     learning_rate=critic_learning_rate),
                 alpha_optimizer=tf.keras.optimizers.Adam(
                     learning_rate=alpha_learning_rate),
-                cql_alpha=0.89,
+                cql_alpha=0.78,
                 include_critic_entropy_term=True,
                 num_cql_samples=12,
-                use_lagrange_cql_alpha=True,
+                use_lagrange_cql_alpha=False,
                 target_update_tau=target_update_tau,
                 target_update_period=target_update_period,
                 td_errors_loss_fn=tf.math.squared_difference,
-                gamma=gamma)
+                gamma=0.87)
             
     
         agent.initialize()
@@ -139,7 +135,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
         trajs.append(traj)
 
 
-        if  idx > train_end:    # TODO przetestować idx < train_end
+        if  idx < train_end:    # TODO przetestować idx < train_end
             replay_buffer.add_batch(traj)
         else:
             test_buffer.append(traj)
@@ -156,8 +152,7 @@ def main(argv=None):
     if argv is None:
         argv = []
 
-    env = ParallelPyEnvironment([create_environment] * 1)
-    train_env = tf_py_environment.TFPyEnvironment(env)
+    train_env = tf_py_environment.TFPyEnvironment(create_environment())
 
     agent = configure_agent(train_env)
 
@@ -165,10 +160,10 @@ def main(argv=None):
 
     replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
                         data_spec=agent.collect_data_spec,
-                        batch_size=env.batch_size,
+                        batch_size=1,
                         max_length=20000)
-    env.close()
-    del train_env, env
+    train_env.close()
+    del train_env
 
     print("================================== collecting data ===============================================")
     test_buffer = []
@@ -184,7 +179,7 @@ def main(argv=None):
     dataset = replay_buffer.as_dataset(
         num_parallel_calls=3, 
         sample_batch_size=BATCH_SIZE, 
-        num_steps=2).prefetch(3)
+        num_steps=train_sequence_length).prefetch(3)
 
     iterator = iter(dataset)
 

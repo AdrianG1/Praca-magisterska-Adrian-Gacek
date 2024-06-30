@@ -42,55 +42,55 @@ reward_scale_factor = 1 # @param {type:"number"}
 
 actor_fc_layer_params = (75, 75, 75, 75, 75)
 critic_joint_fc_layer_params = (75, 75, 75, 75, 75)
-train_sequence_length = 50
+
+train_sequence_length = 10
+num_episodes = 20
 
 def configure_agent(env):
 
+    strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
 
-    actor_net = ActorRnnNetwork(
-        env.observation_spec(),
-        env.action_spec(),
+    # Actor network
+    with strategy.scope():
+        actor_net = ActorRnnNetwork(
+            env.observation_spec(),
+            env.action_spec(),
 
-        conv_layer_params=None,
-        input_fc_layer_params=(200, 100),
-        lstm_size=(40,),
-        output_fc_layer_params=(200, 100)
-    )
+            conv_layer_params=None,
+            input_fc_layer_params=(200, 100),
+            lstm_size=(75,),
+            output_fc_layer_params=(200, 100)
+        )
 
-    critic_net = critic_rnn_network.CriticRnnNetwork(
-        (env.observation_spec(), env.action_spec()),
-        observation_conv_layer_params=None,
-        observation_fc_layer_params=None,
-        action_fc_layer_params=None,
-        joint_fc_layer_params=None,
-        lstm_size=(40,),
-        output_fc_layer_params=(200, 100)
-    )
+        critic_net = critic_rnn_network.CriticRnnNetwork(
+            (env.observation_spec(), env.action_spec()),
+            observation_conv_layer_params=None,
+            observation_fc_layer_params=None,
+            action_fc_layer_params=None,
+            joint_fc_layer_params=None,
+            lstm_size=(75,),
+            output_fc_layer_params=(200, 100)
+        )
 
-    actor_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=actor_learning_rate)
-    critic_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=critic_learning_rate)
+        actor_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=actor_learning_rate)
+        critic_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=critic_learning_rate)
 
-    train_step_counter = tf.Variable(0)
 
-    agent = td3_agent.Td3Agent(
-        env.time_step_spec(),
-        env.action_spec(),
-        actor_network=actor_net,
-        critic_network=critic_net,
-        actor_optimizer=actor_optimizer,
-        critic_optimizer=critic_optimizer,
-        exploration_noise_std=0.1,
-        target_update_tau=0.005,
-        target_update_period=2,
-        actor_update_period=2,
-        #td_errors_loss_fn=common.element_wise_squared_loss,
-        gamma=0.99,
-        reward_scale_factor=1.0,
-        train_step_counter=train_step_counter
-    )
-    #agent.train_sequence_length = train_sequence_length
+        agent = td3_agent.Td3Agent(
+            env.time_step_spec(),
+            env.action_spec(),
+            actor_network=actor_net,
+            critic_network=critic_net,
+            actor_optimizer=actor_optimizer,
+            critic_optimizer=critic_optimizer,
+            exploration_noise_std=0.1,
+            target_update_tau=0.005,
+            target_update_period=2,
+            actor_update_period=2,
+            gamma=0.99
+        )
 
-    agent.initialize()
+        agent.initialize()
     return agent
 
 global trajs
@@ -183,8 +183,8 @@ def main(argv=None):
     plot_trajs()
 
     collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
+    # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
+    collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
 
     # Dataset generates trajectories with shape [Bx2x...]
     dataset = replay_buffer.as_dataset(
@@ -196,7 +196,6 @@ def main(argv=None):
 
     print("================================== training ======================================================")
     # Run the training loop
-    num_episodes = 50
     steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE
     losses = np.full(num_episodes*steps_per_episode+1, -1)
 

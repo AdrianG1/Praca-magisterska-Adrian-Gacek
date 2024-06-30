@@ -15,7 +15,7 @@ import contextlib
 
 # genertor nastaw temperatury
 def setpoint_gen(clk):
-    rng = random.Random(2137)
+    rng = random.Random(123141)
     lower_constraint = 200  # minimalny okres zmian nastaw temperatury [s]
     upper_constraint = 600  # maksymalny okres zmian nastaw temperatury [s]
     min_T = 30              # minimalna wartość nastaw temperatury [*C]
@@ -62,7 +62,7 @@ class SystemState():
 
 class Environment(py_environment.PyEnvironment):
     SPEEDUP = 100
-    EPISODE_TIME = 300 * 60 #[s]
+    EPISODE_TIME = 60 * 60 #[s]
     C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
     E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
     COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości
@@ -71,10 +71,10 @@ class Environment(py_environment.PyEnvironment):
     STEP = 0.5
 
 
-    def __init__(self, discret=False):
+    def __init__(self, discret=False, num_actions=5):
         # parametry symulacji
         self.discret = discret # True jeśli akcje są dyskretne
-
+        self.NUM_OF_ACTIONS = num_actions
         # inicjalizacja stanu początkowego
         self.state = SystemState()
 

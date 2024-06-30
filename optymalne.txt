@@ -1,0 +1,3 @@
+
+CQL:
+[32m[I 2024-06-29 16:16:15,753][0m Trial 13 finished with value: 17985.19334411621 and parameters: {'actor_fc_input0': 223, 'actor_fc_input1': 67, 'actor_lstm_size': 97, 'actor_fc_output0': 106, 'include_critic_joint_fc_layer_params': True, 'critic_fc_input0': 65, 'critic_fc_input1': 247, 'critic_lstm_size': 105, 'critic_fc_output0': 199, 'activation_fn': <function relu at 0x7f9ecb403130>, 'actor_learning_rate': 1.2136567199563022e-05, 'target_update_period': 70, 'target_update_tau': 0.001712231342519933, 'gamma': 0.8720378989810889, 'cql_alpha': 0.7857725073928593, 'include_critic_entropy_term': True, 'use_lagrange_cql_alpha': False, 'num_data_in_sequence': 20}. Best is trial 13 with value: 17985.19334411621.[0m

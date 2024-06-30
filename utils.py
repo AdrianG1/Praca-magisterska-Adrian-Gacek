@@ -6,7 +6,20 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from pandas import read_csv
 from tf_agents.trajectories import time_step as ts
+from tf_agents.trajectories import Trajectory
+from tf_agents.trajectories.time_step import tensor_spec
+import pickle
 
+def save_study(study, filename):
+    with open(filename, 'wb') as f:
+        pickle.dump(study, f)
+
+# Funkcja do wczytywania stanu optymalizacji
+def load_study(filename):
+    with open(filename, 'rb') as f:
+        return pickle.load(f)
+
+DISCOUNT=0.75
 
 def evaluate_policy(agent, test_buffer, num_test_steps=1000):
     difference = 0
@@ -34,6 +47,7 @@ def undiscretize(action, num_actions=5):
     return tf.constant(100/(num_actions-1) * action)    
 
 def plot_trajs(trajs):
+    print(trajs)
     states = np.squeeze(np.array([traj.observation for traj in trajs]))
     actions = np.squeeze(np.array([traj.action for traj in trajs]))
     plt.figure()
@@ -45,6 +59,18 @@ def plot_trajs(trajs):
     plt.title('trajectory actions')
     plt.savefig('./plot/actions_trajs.png')
 
+
+def get_data_spec():
+    return Trajectory(  tensor_spec.TensorSpec(shape=(), dtype=np.int32, name='step_type'), 
+                        tensor_spec.TensorSpec(shape=(2,), dtype=np.float32, name='observation'),
+                        tensor_spec.BoundedTensorSpec(shape=(), dtype=np.float32, minimum=0, maximum=100.0, name='action'), 
+                        (), 
+                        tensor_spec.TensorSpec(shape=(), dtype=np.int32, name='next_step_type'),
+                        tensor_spec.TensorSpec(shape=(), dtype=np.float32, name='reward'), 
+                        tensor_spec.BoundedTensorSpec(shape=(), dtype=np.float32, name='discount', minimum=0.0, maximum=1.0)
+                    )
+
+
 def plot_loss(losses, num_episodes=0):
     plt.figure()
     # plt.plot(range(len(losses)), losses)
@@ -55,10 +81,16 @@ def plot_loss(losses, num_episodes=0):
     plt.title('losses')
     plt.savefig('./plot/losses.png')
 
-def get_trajectory_from_csv(path, state_dim, train_buffer, test_buffer, TRAIN_TEST_RATIO):
+def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, TRAIN_TEST_RATIO):
+    from pandas import read_csv
     df = read_csv(path, index_col=0)
 
+    global trajs
     trajs = []
+    
+    global actions_representation
+    actions_representation = {}
+
     train_end = len(df) * TRAIN_TEST_RATIO
     for idx, record in df.iterrows():
 
@@ -68,20 +100,19 @@ def get_trajectory_from_csv(path, state_dim, train_buffer, test_buffer, TRAIN_TE
         continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
 
         traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
-                        tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
+                        tf.expand_dims(tf.constant(state*100, dtype=tf.float32), axis=0),
                         continous_action, 
                         (), 
                         tf.constant(1, dtype=tf.int32, shape=(1,)),
                         tf.constant(reward, dtype=tf.float32, shape=(1,)), 
-                        tf.constant(0, dtype=tf.float32, shape=(1,)))
+                        tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
         trajs.append(traj)
 
-        if  idx > train_end:
-            test_buffer.add_batch(traj)
-        else:
-            train_buffer.add_batch(traj)
 
-    plot_trajs(traj)
+        if  idx < train_end:    # TODO przetestować idx < train_end
+            replay_buffer.add_batch(traj)
+        else:
+            test_buffer.append(traj)
 
 class CustomReplayBuffer(UserList):
     def __init__(self, batch_size=32, num_steps=2):

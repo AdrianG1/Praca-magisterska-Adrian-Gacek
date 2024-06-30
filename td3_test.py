@@ -31,8 +31,10 @@ def main():
     controls = []
     times = []
     
+    
+
     log_memory_usage()
-    for i in tqdm(range(10, 20,3)):
+    for i in tqdm(range(10, 25,3)):
         try:
             loaded_policy = tf.saved_model.load(f'./policies/CQL{i}')
             policy_state = loaded_policy.get_initial_state(batch_size=1)
