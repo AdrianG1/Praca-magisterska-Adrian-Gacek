@@ -143,11 +143,11 @@ def main(argv=None):
     replay_buffer = CustomReplayBuffer(num_steps=12)
 
     print("================================== collecting data ===============================================")
-    get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer)
+    get_trajectory_from_csv("./csv_data/trajectory1.csv", 2, replay_buffer)
     plot_trajs()
 
     # Dataset generates trajectories with shape [Bx2x...]
-    replay_buffer.compile()
+    iterator = replay_buffer.get_iterator()
 
     print("================================== training ======================================================")
     # Run the training loop
@@ -159,7 +159,7 @@ def main(argv=None):
         try:
             for _ in range(steps_per_episode):
                 # Sample a batch of data from the buffer and update the agent's network.
-                experience = replay_buffer.get_sample()
+                experience = next(iterator)
                 train_loss = agent.train(experience).loss
                 step = agent.train_step_counter.numpy()
                 losses[step] = train_loss

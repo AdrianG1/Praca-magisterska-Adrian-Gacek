@@ -2,7 +2,11 @@ import tensorflow as tf
 from environmentv3 import Environment
 import os
 from utils import evaluate_policy, CustomReplayBuffer
+from tf_agents.policies import py_tf_eager_policy
 
+from tf_agents.drivers import py_driver
+import reverb
+from tf_agents.specs import tensor_spec
 from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.agents.sac import sac_agent
 from tf_agents.networks import actor_distribution_rnn_network
@@ -10,6 +14,8 @@ from tf_agents.utils import common
 import tensorflow as tf
 import numpy as np
 from tf_agents.environments import tf_py_environment
+from tf_agents.replay_buffers import reverb_replay_buffer
+from tf_agents.replay_buffers import reverb_utils
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 import multiprocessing
 import functools
@@ -18,7 +24,7 @@ import warnings
 warnings.filterwarnings('ignore')
 from tf_agents.environments import ParallelPyEnvironment
 from tf_agents.utils import common
-from tf_agents.policies import policy_saver
+from tf_agents.policies import policy_saver, policy_loader
 from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
@@ -47,6 +53,7 @@ reward_scale_factor = 1.0 # @param {type:"number"}
 actor_fc_layer_params = (75, 75, 75, 75)
 critic_joint_fc_layer_params =(75, 75, 75, 75)
 
+replay_buffer_max_length = 3000
 
 global trajs
 trajs = []
@@ -175,59 +182,97 @@ def main(argv=None):
     if argv is None:
         argv = []
 
-    env = ParallelPyEnvironment([create_environment] * 1)
-    train_env = tf_py_environment.TFPyEnvironment(env)
+    train_env = create_environment()
+    train_py_env = tf_py_environment.TFPyEnvironment(train_env)
+    agent = configure_agent(train_py_env)
 
-    agent = configure_agent(train_env)
+    agent.initialize()
+    tf_policy = policy_loader.load('./policies/SAC20')    
+    agent.policy.update(tf_policy)
 
+    # (Optional) Reset the agent's policy state
     agent.train = common.function(agent.train)
 
-    replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-                        data_spec=agent.collect_data_spec,
-                        batch_size=train_env.batch_size,
-                        max_length=20000)
-    env.close()
-    del train_env, env
+
+    table_name = 'uniform_table'
+    replay_buffer_signature = tensor_spec.from_spec(
+        agent.collect_data_spec)
+    replay_buffer_signature = tensor_spec.add_outer_dim(
+        replay_buffer_signature)
+
+    table = reverb.Table(
+        table_name,
+        max_size=1000,
+        sampler=reverb.selectors.Uniform(),
+        remover=reverb.selectors.Fifo(),
+        rate_limiter=reverb.rate_limiters.MinSize(1),
+        signature=replay_buffer_signature)
+
+    reverb_server = reverb.Server([table])
+
+    replay_buffer = reverb_replay_buffer.ReverbReplayBuffer(
+                                agent.collect_data_spec,
+                                table_name=table_name,
+                                sequence_length=12,
+                                local_server=reverb_server)
+
+    rb_observer = reverb_utils.ReverbAddTrajectoryObserver(
+                                replay_buffer.py_client,
+                                table_name,
+                                sequence_length=12)
     
-    print("================================== collecting data ===============================================")
-    test_buffer = []
+    # random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
+    #                                             train_env.action_spec())
+    
 
-    get_trajectory_from_csv("./csv_data/trajectory1.csv", 2, replay_buffer, test_buffer)
-    plot_trajs()
-
-    # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
-
-    # Dataset generates trajectories with shape [Bx2x...]
     dataset = replay_buffer.as_dataset(
-        num_parallel_calls=3, 
-        sample_batch_size=BATCH_SIZE, 
-        num_steps=train_sequence_length).prefetch(3)
-
+            num_parallel_calls=3,
+            sample_batch_size=BATCH_SIZE,
+            num_steps=12).prefetch(3)
+    
     iterator = iter(dataset)
 
+    # Create a driver to collect experience.
+    collect_driver = py_driver.PyDriver(
+        train_env,
+        py_tf_eager_policy.PyTFEagerPolicy(
+        agent.collect_policy, use_tf_function=True, batch_time_steps=True),
+        [rb_observer],
+        max_steps=BATCH_SIZE)
+    
+    time_step = train_env.reset()
+
+
+
+    policy_state = agent.policy.get_initial_state(batch_size=1)
     print("================================== training ======================================================")
     # Run the training loop
-    steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE
-    losses = np.full(num_episodes*steps_per_episode+1, -1)
+    num_episodes = 50
+    steps_per_episode = 50
+    losses = []
 
     for episode in tqdm(range(num_episodes)):
         try:
-            for _ in range(steps_per_episode):
+            for i in range(steps_per_episode):
+                # Collect a few steps and save to the replay buffer.
+                time_step, policy_state = collect_driver.run(time_step, policy_state)
+
                 # Sample a batch of data from the buffer and update the agent's network.
-                experience, unused_info = next(iterator)
+                experience, _ = next(iterator)
+                print("step ", i)
                 train_loss = agent.train(experience).loss
+
                 step = agent.train_step_counter.numpy()
-                losses[step] = train_loss
+                losses.append(train_loss)
+
             tqdm.write('\nstep = {0}: loss = {1}\n'.format(step, train_loss))
-            if episode % 5 == 0:
-                tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
+            # if episode % 5 == 0:
+            #     tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
 
 
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/SAC{episode}', exist_ok=True)
-            saver.save(f'./policies/SAC{episode}')
+            os.makedirs(f'./policies/SAC_online{episode}', exist_ok=True)
+            saver.save(f'./policies/SAC_online{episode}')
         except KeyboardInterrupt:
             break
             print("next")

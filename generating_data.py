@@ -3,6 +3,28 @@ from environmentv3 import Environment
 from utils import plot_trajs, abnormalize_state
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_pd_trajs(trajectory):
+    """ Plot kontrolny wczytywanej trajektorii"""
+    states = trajectory[["T", "T_błąd"]]
+    rewards = trajectory["Nagrody"]
+    actions= trajectory["Akcje"]
+
+    plt.figure()
+    plt.plot(states)
+    plt.title('trajectory states')
+    plt.savefig('./plot/states_trajs.png')    
+    plt.figure()
+    plt.plot(rewards)
+    plt.title('trajectory reward')
+    plt.savefig('./plot/reward_trajs.png')
+    plt.figure()
+    plt.plot(actions)
+    plt.title('trajectory actions')
+    plt.savefig('./plot/actions_trajs.png')
+
 
 
 def collect_step(environment, control_function):
@@ -43,7 +65,7 @@ def analyze_data(data):
 def main(argv=None):
 
     # Inicjalizacja środowiska i regulatora
-    env = Environment(discret=False)
+    env = Environment(discret=False, episode_time=300, seed=2137)
     env.reset()
     pid = PID()
 
@@ -79,7 +101,7 @@ def main(argv=None):
     print(" Oczyszczona, znormalizowana trajektoria")
     analyze_data(trajectory) 
 
-    plot_trajs(trajectory)
+    plot_pd_trajs(trajectory)
     trajectory.to_csv("./csv_data/trajectory.csv")
 
 

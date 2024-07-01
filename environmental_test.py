@@ -16,7 +16,7 @@ def log_memory_usage():
     print(f'\n\n\n\n Memory usage: {memory_use:.2f} MB')
 
 def create_environment():
-    return Environment(discret=False)
+    return Environment(discret=False, episode_time=30, seed=123141)
 
 
 def main():
@@ -35,9 +35,9 @@ def main():
     
 
     log_memory_usage()
-    for i in tqdm(range(10, 25,3)):
+    for i in tqdm(range(19, 27,14)):
         try:
-            loaded_policy = tf.saved_model.load(f'./policies/CQL{i}')
+            loaded_policy = tf.saved_model.load(f'./policies/td3{i}')
             policy_state = loaded_policy.get_initial_state(batch_size=1)
             time_step = env.reset()
             time_step = ts.TimeStep(
@@ -52,7 +52,6 @@ def main():
                 policy_state = action_step.state
 
                 time_step = env.step(action_step.action)
-
                 time_step = ts.TimeStep(
                         step_type=tf.reshape(time_step.step_type, (1, )),
                         reward=tf.reshape(time_step.reward, (1, )),

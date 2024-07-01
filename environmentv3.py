@@ -14,8 +14,8 @@ import contextlib
 
 
 # genertor nastaw temperatury
-def setpoint_gen(clk):
-    rng = random.Random(123141)
+def setpoint_gen(clk, seed=123141):
+    rng = random.Random(seed)
     lower_constraint = 200  # minimalny okres zmian nastaw temperatury [s]
     upper_constraint = 600  # maksymalny okres zmian nastaw temperatury [s]
     min_T = 30              # minimalna wartość nastaw temperatury [*C]
@@ -59,7 +59,7 @@ class SystemState():
 
 class Environment(py_environment.PyEnvironment):
     SPEEDUP = 100
-    EPISODE_TIME = 60 * 60 #[s]
+    #EPISODE_TIME = 9999999999 * 60 #[s]
     C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
     E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
     COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości
@@ -67,11 +67,12 @@ class Environment(py_environment.PyEnvironment):
     STEP = 0.5
 
 
-    def __init__(self, discret=False, num_actions=5):
+    def __init__(self, discret=False, episode_time=60, seed=123141, num_actions=5):
         # parametry symulacji
         self.discret = discret # True jeśli akcje są dyskretne
         self.NUM_OF_ACTIONS = num_actions
-
+        self.episode_time = episode_time * 60 
+        self._seed = seed 
         # inicjalizacja stanu początkowego
         self.state = SystemState()
 
@@ -132,8 +133,8 @@ class Environment(py_environment.PyEnvironment):
                 # Otwieram nowe laboratorium z nowym zegarem i generatorem nastaw
                 lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
                 self.lab = lab()
-                self.clk = tclab.clock(self.EPISODE_TIME, step=self.STEP)
-                self._T_gen = setpoint_gen(self.clk)
+                self.clk = tclab.clock(self.episode_time, step=self.STEP)
+                self._T_gen = setpoint_gen(self.clk, self._seed)
 
         self.__set_control(0)
         self.__state_update()
@@ -145,7 +146,7 @@ class Environment(py_environment.PyEnvironment):
 
         try:
             self.time = next(self.clk)
-            self.done = (self.time >= self.EPISODE_TIME)
+            self.done = (self.time >= self.episode_time)
         except StopIteration: # Jeśli czas epizodu się skończył
             self.done = True
 
@@ -168,7 +169,7 @@ class Environment(py_environment.PyEnvironment):
         """ Wyznaczanie nagrody """
 
         # komfort temperaturowy
-        diff = abs(self.state.T_diff) #abs(self.state.T - self.state.T_sp)
+        diff = abs(self.state.T_diff - 0.5) #abs(self.state.T - self.state.T_sp)
         comfort = -diff
         
         # zużycie energii
@@ -177,9 +178,9 @@ class Environment(py_environment.PyEnvironment):
 
     def __state_update(self):
         """aktualizacja stanów normalizacja do wartości 0-1"""
-        self.state.T = self.lab.T1 / 100             
-        self.state.T_diff = (next(self._T_gen) - self.state.T) / 200 + 0.5
-
+        T =  self.lab.T1
+        self.state.T = T / 100             
+        self.state.T_diff = (next(self._T_gen) - T) / 200 + 0.5
         #self.state
 
     def __set_control(self, action):

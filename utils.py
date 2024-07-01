@@ -32,10 +32,10 @@ def evaluate_policy(agent, test_buffer, num_test_steps=1000):
 
 
 def abnormalize_state(state):
-    """ nienormalizacja stanu """
+    """ nienormalizacja stanu (odwrócenie normalizacji)"""
     T_diff = (state[..., 1]-0.5)*200
     T = state[..., 0]*100
-    return np.reshape(np.concatenate([T,T_diff], axis=-1), state.shape) 
+    return np.reshape(np.stack([T,T_diff], axis=-1), state.shape) 
 
 
 def discretize(action, num_actions=5):
@@ -54,10 +54,16 @@ def plot_trajs(trajs):
     """ Plot kontrolny wczytywanej trajektorii"""
     states = np.squeeze(np.array([traj.observation for traj in trajs]))
     actions = np.squeeze(np.array([traj.action for traj in trajs]))
+    rewards = np.squeeze(np.array([traj.reward for traj in trajs]))
+
     plt.figure()
     plt.plot(range(len(states)), states[:, 0:2])
-    plt.title('losses')
-    plt.savefig('./plot/states_trajs.png')
+    plt.title('trajectory states')
+    plt.savefig('./plot/states_trajs.png')    
+    plt.figure()
+    plt.plot(range(len(states)), rewards)
+    plt.title('trajectory reward')
+    plt.savefig('./plot/reward_trajs.png')
     plt.figure()
     plt.plot(range(len(actions)), actions)
     plt.title('trajectory actions')
@@ -78,7 +84,7 @@ def get_data_spec():
 
 def plot_loss(losses, num_episodes=0):
     plt.figure()
-    plt.plot(range(len(losses)), losses, "b")
+    plt.plot(losses, "b")
     if num_episodes > 0:
         n = len(losses)//num_episodes
         mean_loss_for_episode = [np.mean(losses[i:i+n]) for i in range(0, len(losses), n)]
