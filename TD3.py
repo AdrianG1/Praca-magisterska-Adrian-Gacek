@@ -1,7 +1,7 @@
 import tensorflow as tf
 from environmentv3 import Environment
 import os
-
+from utils import plot_loss, plot_trajs, get_trajectory_from_csv
 from tf_agents.agents.ddpg.actor_rnn_network import ActorRnnNetwork
 from tf_agents.agents.ddpg import critic_rnn_network
 
@@ -40,8 +40,6 @@ target_update_period = 10 # @param {type:"number"}
 gamma = 0.9182588601932395 # @param {type:"number"}
 reward_scale_factor = 1 # @param {type:"number"}
 
-actor_fc_layer_params = (75, 75, 75, 75, 75)
-critic_joint_fc_layer_params = (75, 75, 75, 75, 75)
 
 train_sequence_length = 10
 num_episodes = 20
@@ -93,66 +91,6 @@ def configure_agent(env):
         agent.initialize()
     return agent
 
-global trajs
-trajs = []
-
-def plot_trajs():
-    global trajs
-    states = np.squeeze(np.array([traj.observation for traj in trajs]))
-    actions = np.squeeze(np.array([traj.action for traj in trajs]))
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.plot(range(len(states)), states[:, 0:2])
-    plt.title('losses')
-    plt.savefig('./plot/states_trajs.png')
-    plt.figure()
-    plt.plot(range(len(actions)), actions)
-    plt.title('trajectory actions')
-    plt.savefig('./plot/actions_trajs.png')
-
-def plot_loss(losses, num_episodes=0):
-    import matplotlib.pyplot as plt
-
-    plt.figure()
-    # plt.plot(range(len(losses)), losses)
-    if num_episodes > 0:
-        n = len(losses)//num_episodes
-        mean_loss_for_episode = [np.mean(losses[i:i+n]) for i in range(0, len(losses), n)]
-        plt.plot(range(0, len(losses), n), mean_loss_for_episode)
-    plt.title('losses')
-    plt.savefig('./plot/losses.png')
-
-
-def get_trajectory_from_csv(path, state_dim, replay_buffer):
-    from pandas import read_csv
-    df = read_csv(path, index_col=0)
-
-    global trajs
-    trajs = []
-    
-    global actions_representation
-    actions_representation = {}
-
-    train_end = len(df) #* TRAIN_TEST_RATIO
-    for idx, record in df.iterrows():
-
-        state = record.iloc[:state_dim].values  # Convert to numpy array
-        action = tf.constant(record["Akcje"], dtype=tf.float32)
-        reward = record["Nagrody"]
-        continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
-
-        traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
-                        tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
-                        continous_action, 
-                        (), 
-                        tf.constant(1, dtype=tf.int32, shape=(1,)),
-                        tf.constant(reward, dtype=tf.float32, shape=(1,)), 
-                        tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
-        # replay_buffer.add_batch(traj)
-        trajs.append(traj)
-
-        if  idx > train_end:
-            replay_buffer.add_batch(traj)
 
 def create_environment():
     return Environment(discret=False)
@@ -179,8 +117,8 @@ def main(argv=None):
     del train_env, env
 
     print("================================== collecting data ===============================================")
-    get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer)
-    plot_trajs()
+    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer)
+    plot_trajs(trajs)
 
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
     # # collected_data_checkpoint.save("./replay_buffers/replay_buffer")

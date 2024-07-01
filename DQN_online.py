@@ -18,7 +18,7 @@ from tf_agents.system import multiprocessing
 import warnings
 warnings.filterwarnings('ignore')
 from tf_agents.utils import common
-from tf_agents.policies import policy_saver
+from tf_agents.policies import policy_saver, policy_loader
 from tqdm import tqdm
 import os
 from utils import plot_loss
@@ -31,6 +31,8 @@ LEARNING_RATE = 2e-4
 DISCOUNT = 0.75
 TRAIN_TEST_RATIO = 0.75
 NUM_STEPS_DATASET = 2
+POLICY_LOAD_ID = 20
+
 replay_buffer_max_length = 1000
 
 
@@ -81,6 +83,7 @@ def main(argv=None):
     agent = configure_agent(train_env)
 
     agent.initialize()
+    tf_policy = policy_loader.load(f'./policies/DQN{POLICY_LOAD_ID}')    
 
     # (Optional) Reset the agent's policy state
     agent.train = common.function(agent.train)
@@ -112,9 +115,7 @@ def main(argv=None):
                                 replay_buffer.py_client,
                                 table_name,
                                 sequence_length=12)
-    
-    random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
-                                                train_env.action_spec())
+
     
 
     dataset = replay_buffer.as_dataset(
@@ -161,8 +162,8 @@ def main(argv=None):
             tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
 
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/DQN{episode}', exist_ok=True)
-            saver.save(f'./policies/DQN{episode}')
+            os.makedirs(f'./policies/DQN_online{episode}', exist_ok=True)
+            saver.save(f'./policies/DQN_online{episode}')
         except KeyboardInterrupt:
             break
 

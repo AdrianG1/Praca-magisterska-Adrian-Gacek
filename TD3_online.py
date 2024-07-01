@@ -36,6 +36,7 @@ LEARNING_RATE = 2e-4
 DISCOUNT = 0.75
 TRAIN_TEST_RATIO = 0.75
 NUM_STEPS_DATASET = 2
+POLICY_LOAD_ID = 19
 
 critic_learning_rate = 3e-4
 actor_learning_rate = 3e-5 
@@ -144,7 +145,7 @@ def main(argv=None):
     agent = configure_agent(train_py_env)
 
     agent.initialize()
-    tf_policy = policy_loader.load('./policies/td319')    
+    tf_policy = policy_loader.load(f'./policies/td3{POLICY_LOAD_ID}')    
     agent.policy.update(tf_policy)
 
     # (Optional) Reset the agent's policy state
@@ -159,7 +160,7 @@ def main(argv=None):
 
     table = reverb.Table(
         table_name,
-        max_size=500,
+        max_size=BATCH_SIZE,
         sampler=reverb.selectors.Uniform(),
         remover=reverb.selectors.Fifo(),
         rate_limiter=reverb.rate_limiters.MinSize(1),
@@ -170,13 +171,13 @@ def main(argv=None):
     replay_buffer = reverb_replay_buffer.ReverbReplayBuffer(
                                 agent.collect_data_spec,
                                 table_name=table_name,
-                                sequence_length=12,
+                                sequence_length=train_sequence_length,
                                 local_server=reverb_server)
 
     rb_observer = reverb_utils.ReverbAddTrajectoryObserver(
                                 replay_buffer.py_client,
                                 table_name,
-                                sequence_length=12)
+                                sequence_length=train_sequence_length)
     
     # random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
     #                                             train_env.action_spec())
@@ -185,7 +186,7 @@ def main(argv=None):
     dataset = replay_buffer.as_dataset(
             num_parallel_calls=3,
             sample_batch_size=BATCH_SIZE,
-            num_steps=12).prefetch(3)
+            num_steps=train_sequence_length).prefetch(3)
     
     iterator = iter(dataset)
 

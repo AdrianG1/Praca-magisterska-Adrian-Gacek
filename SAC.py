@@ -1,7 +1,7 @@
 import tensorflow as tf
 from environmentv3 import Environment
 import os
-from utils import evaluate_policy, CustomReplayBuffer
+from utils import evaluate_policy, plot_loss, plot_trajs
 
 from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.agents.sac import sac_agent
@@ -35,48 +35,14 @@ num_episodes = 25
 train_sequence_length = 12
 batch_size = 256 # @param {type:"integer"}
 
-critic_learning_rate = 3e-4 # @param {type:"number"}
-actor_learning_rate = 3e-5 # @param {type:"number"}
-alpha_learning_rate = 3e-5 # @param {type:"number"}
+critic_learning_rate = 3e-3 # @param {type:"number"}
+actor_learning_rate = 3e-4 # @param {type:"number"}
+alpha_learning_rate = 3e-4 # @param {type:"number"}
 
 target_update_tau = 0.005 # @param {type:"number"}
 target_update_period = 10 # @param {type:"number"}
 gamma = 0.99 # @param {type:"number"}
 reward_scale_factor = 1.0 # @param {type:"number"}
-
-actor_fc_layer_params = (75, 75, 75, 75)
-critic_joint_fc_layer_params =(75, 75, 75, 75)
-
-
-global trajs
-trajs = []
-
-
-def plot_trajs():
-    global trajs
-    states = np.squeeze(np.array([traj.observation for traj in trajs]))
-    actions = np.squeeze(np.array([traj.action for traj in trajs]))
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.plot(range(len(states)), states[:, 0:2])
-    plt.title('losses')
-    plt.savefig('./plot/states_trajs.png')
-    plt.figure()
-    plt.plot(range(len(actions)), actions)
-    plt.title('trajectory actions')
-    plt.savefig('./plot/actions_trajs.png')
-
-def plot_loss(losses, num_episodes=0):
-    import matplotlib.pyplot as plt
-
-    plt.figure()
-    # plt.plot(range(len(losses)), losses)
-    if num_episodes > 0:
-        n = len(losses)//num_episodes
-        mean_loss_for_episode = [np.mean(losses[i:i+n]) for i in range(0, len(losses), n)]
-        plt.plot(range(0, len(losses), n), mean_loss_for_episode)
-    plt.title('losses')
-    plt.savefig('./plot/losses.png')
 
 
 def configure_agent(env):
@@ -158,7 +124,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
         trajs.append(traj)
 
 
-        if  idx < train_end:    # TODO przetestować idx < train_end
+        if  idx < train_end:    
             replay_buffer.add_batch(traj)
         else:
             test_buffer.append(traj)
@@ -192,8 +158,8 @@ def main(argv=None):
     print("================================== collecting data ===============================================")
     test_buffer = []
 
-    get_trajectory_from_csv("./csv_data/trajectory1.csv", 2, replay_buffer, test_buffer)
-    plot_trajs()
+    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, test_buffer)
+    plot_trajs(trajs)
 
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
     # # collected_data_checkpoint.save("./replay_buffers/replay_buffer")

@@ -1,6 +1,5 @@
 from environmentv3 import Environment
-from utils import CustomReplayBuffer
-from PID import PID
+from utils import CustomReplayBuffer, discretize, plot_trajs, plot_loss
 import tensorflow as tf
 import numpy as np
 from tf_agents.agents.dqn import dqn_agent
@@ -28,40 +27,6 @@ DISCOUNT = 0.75
 TRAIN_TEST_RATIO = 0.75
 NUM_STEPS_DATASET = 2
 
-
-global trajs
-trajs = []
-
-def plot_trajs():
-    global trajs
-    states = np.squeeze(np.array([traj.observation for traj in trajs]))
-    actions = np.squeeze(np.array([traj.action for traj in trajs]))
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.plot(range(len(states)), states[:, 0:2])
-    plt.title('losses')
-    plt.savefig('./plot/states_trajs.png')
-    plt.figure()
-    plt.plot(range(len(actions)), actions)
-    plt.title('trajectory actions')
-    plt.savefig('./plot/actions_trajs.png')
-
-def plot_loss(losses, num_episodes=0):
-    import matplotlib.pyplot as plt
-
-    plt.figure()
-    # plt.plot(range(len(losses)), losses)
-    if num_episodes > 0:
-        n = len(losses)//num_episodes
-        mean_loss_for_episode = [np.mean(losses[i:i+n]) for i in range(0, len(losses), n)]
-        plt.plot(range(0, len(losses), n), mean_loss_for_episode)
-    plt.title('losses')
-    plt.savefig('./plot/losses.png')
-
-
-def discretize(action):
-    return tf.constant((max(min(action, 100), 0)+12) // 25, dtype=tf.float32)
-    
 
 def create_environment():
     #return wrappers.ActionDiscretizeWrapper(Environment(), num_actions=5)
@@ -143,8 +108,8 @@ def main(argv=None):
     replay_buffer = CustomReplayBuffer(num_steps=12)
 
     print("================================== collecting data ===============================================")
-    get_trajectory_from_csv("./csv_data/trajectory1.csv", 2, replay_buffer)
-    plot_trajs()
+    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer)
+    plot_trajs(trajs)
 
     # Dataset generates trajectories with shape [Bx2x...]
     iterator = replay_buffer.get_iterator()

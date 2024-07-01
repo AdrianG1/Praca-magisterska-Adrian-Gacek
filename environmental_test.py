@@ -35,9 +35,9 @@ def main():
     
 
     log_memory_usage()
-    for i in tqdm(range(19, 27,14)):
+    for i in tqdm(range(12, 24,4)):
         try:
-            loaded_policy = tf.saved_model.load(f'./policies/td3{i}')
+            loaded_policy = tf.saved_model.load(f'./policies/SAC{i}')
             policy_state = loaded_policy.get_initial_state(batch_size=1)
             time_step = env.reset()
             time_step = ts.TimeStep(

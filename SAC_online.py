@@ -36,6 +36,7 @@ LEARNING_RATE = 2e-4
 DISCOUNT = 0.75
 TRAIN_TEST_RATIO = 0.75
 NUM_STEPS_DATASET = 2
+POLICY_LOAD_ID = 20
 
 num_episodes = 25
 train_sequence_length = 12
@@ -187,7 +188,7 @@ def main(argv=None):
     agent = configure_agent(train_py_env)
 
     agent.initialize()
-    tf_policy = policy_loader.load('./policies/SAC20')    
+    tf_policy = policy_loader.load(f'./policies/td3{POLICY_LOAD_ID}')    
     agent.policy.update(tf_policy)
 
     # (Optional) Reset the agent's policy state

@@ -1,7 +1,7 @@
 import tensorflow as tf
 from environmentv3 import Environment
 import os
-from utils import evaluate_policy, plot_loss, plot_trajs
+from utils import evaluate_policy, plot_loss, plot_trajs, get_trajectory_from_csv
 
 from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.agents.cql import cql_sac_agent
@@ -113,37 +113,6 @@ def configure_agent(env):
 
     return agent
 
-def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
-    from pandas import read_csv
-    df = read_csv(path, index_col=0)
-
-    global trajs
-    trajs = []
-
-    train_end = len(df) * TRAIN_TEST_RATIO
-    for idx, record in df.iterrows():
-
-        state = record.iloc[:state_dim].values  # Convert to numpy array
-        action = tf.constant(record["Akcje"], dtype=tf.float32)
-        reward = record["Nagrody"]
-        continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
-
-        traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
-                        tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
-                        continous_action, 
-                        (), 
-                        tf.constant(1, dtype=tf.int32, shape=(1,)),
-                        tf.constant(reward, dtype=tf.float32, shape=(1,)), 
-                        tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
-        trajs.append(traj)
-
-
-        if  idx < train_end:  
-            replay_buffer.add_batch(traj)
-        else:
-            test_buffer.append(traj)
-
-
 
 def create_environment():
     return Environment(discret=False)
@@ -171,9 +140,9 @@ def main(argv=None):
     print("================================== collecting data ===============================================")
     test_buffer = []
 
-    get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, test_buffer)
-    # plot_trajs(trajs)
-    print("data collected ------------")
+    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, test_buffer)
+    plot_trajs(trajs)
+
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
     # # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
     # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
