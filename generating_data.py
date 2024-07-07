@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 def plot_pd_trajs(trajectory):
     """ Plot kontrolny wczytywanej trajektorii"""
-    states = trajectory[["T", "T_błąd"]]
+    states = trajectory[["T_sp", "T_błąd"]]
     rewards = trajectory["Nagrody"]
     actions= trajectory["Akcje"]
 
@@ -29,7 +29,7 @@ def plot_pd_trajs(trajectory):
 
 def collect_step(environment, control_function):
     time_step = environment.current_time_step()
-    action = control_function(abnormalize_state(time_step.observation),
+    action = control_function((time_step.observation),
                                environment.time)
     next_time_step = environment.step(action)
 
@@ -50,7 +50,6 @@ def collect_data(env, control_function):
         states.append(time_step.observation)
         rewards.append(next_time_step.reward)
         actions.append(action)
-
         episode_running_flag = not next_time_step.is_last() 
 
     return states, rewards, actions
@@ -65,7 +64,7 @@ def analyze_data(data):
 def main(argv=None):
 
     # Inicjalizacja środowiska i regulatora
-    env = Environment(discret=False, episode_time=300, seed=2137)
+    env = Environment(discret=False, episode_time=180, seed=2137)
     env.reset()
     pid = PID()
 
@@ -74,7 +73,7 @@ def main(argv=None):
     del env
 
     # Konwersja na DataFrame
-    states = pd.DataFrame(states, columns=["T", "T_błąd"])
+    states = pd.DataFrame(states, columns=["T_sp", "T_błąd"])
     rewards = pd.DataFrame(rewards, columns=["Nagrody"])
     actions = pd.DataFrame(actions, columns=["Akcje"])
 
@@ -93,6 +92,8 @@ def main(argv=None):
     print("\n Trajektoria \n")
     analyze_data(trajectory) 
     trajectory = trajectory.dropna()  # Usuwanie wierszy z brakującymi wartościami
+    # trajectory.to_csv("./csv_data/trajectory_powt.csv")
+    # print(trajectory[trajectory.duplicated(keep=False)].head(60))
     trajectory = trajectory.drop_duplicates()
 
     scaler = StandardScaler()
