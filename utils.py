@@ -8,8 +8,10 @@ from pandas import read_csv
 from tf_agents.trajectories import time_step as ts
 from tf_agents.trajectories import Trajectory
 from tf_agents.trajectories.time_step import tensor_spec
+import logging
+import os
+import warnings
 
-DISCOUNT=0.75
 
 def evaluate_policy(agent, test_buffer, num_test_steps=1000):
     """Evaluacja polityki poprzez porównanie ze sterowaniem PID"""
@@ -32,9 +34,23 @@ def evaluate_policy(agent, test_buffer, num_test_steps=1000):
 
 
 def abnormalize_state(state):
-    """ nienormalizacja stanu (odwrócenie normalizacji)"""
-    T_diff = (state[..., 1]-0.5)*200
-    T = state[..., 0]*100
+    """ 
+        nienormalizacja stanu (odwrócenie normalizacji)
+
+        Zwraca temperaturę i setpoint [T, T_sp]
+    """
+    # T_diff = (state[..., 1]-0.5)*100
+    # T_sp = state[..., 0]*100
+    T_diff = state[..., 1]
+    T_sp = state[..., 0]
+    T = T_sp - T_diff
+    return np.reshape(np.stack([T, T_sp], axis=-1), state.shape) 
+
+
+def normalize_state(state):
+    """ normalizacja stanu """
+    T_diff = (state[..., 1] / 200 + 0.5)
+    T = state[..., 0] / 100
     return np.reshape(np.stack([T,T_diff], axis=-1), state.shape) 
 
 
@@ -85,24 +101,29 @@ def get_data_spec():
 def plot_loss(losses, num_episodes=0):
     plt.figure()
     plt.plot(losses, "b")
+
     if num_episodes > 0:
         n = len(losses)//num_episodes
         mean_loss_for_episode = [np.mean(losses[i:i+n]) for i in range(0, len(losses), n)]
+
         plt.plot(range(0, len(losses), n), mean_loss_for_episode, "r", linewidth=2)
+        plt.axis((0, len(losses), min(mean_loss_for_episode), max(mean_loss_for_episode)))
+
     plt.title('losses')
     plt.savefig('./plot/losses.png')
 
-def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, TRAIN_TEST_RATIO):
+
+def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, train_test_ratio, discount=0.75):
     """ Wczytywanie danych z csv """
     df = read_csv(path, index_col=0)
 
     trajs = []
 
-    train_end = len(df) * TRAIN_TEST_RATIO
+    train_end = len(df) * train_test_ratio
     for idx, record in df.iterrows():
 
         state = record.iloc[:state_dim].values  # Convert to numpy array
-        action = tf.constant(record["Akcje"], dtype=tf.float32)
+        action = tf.constant(record["Akcje"]/100, dtype=tf.float32)
         reward = record["Nagrody"]
         continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
 
@@ -112,7 +133,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, TRAIN_T
                         (), 
                         tf.constant(1, dtype=tf.int32, shape=(1,)),
                         tf.constant(reward, dtype=tf.float32, shape=(1,)), 
-                        tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
+                        tf.constant(discount, dtype=tf.float32, shape=(1,)))
         trajs.append(traj)
 
 
@@ -203,9 +224,49 @@ class CustomReplayBuffer(UserList):
 
 
 
+def configure_tensorflow_logging():
 
+    open('tensorflow_info.log', 'w').close()
 
+    # Ustaw poziom logowania TensorFlow na INFO, aby przechwytywać wszystkie logi
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
+    tf.get_logger().setLevel('INFO')
 
+    # Skonfiguruj własny logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
 
+    # Utwórz handler dla logów poniżej poziomu ERROR, który zapisuje do pliku
+    file_handler = logging.FileHandler('tensorflow_info.log')
+    file_handler.setLevel(logging.INFO)
+    file_handler.addFilter(lambda record: record.levelno < logging.ERROR)
 
+    # Utwórz handler dla logów ERROR i wyższych, które są wyświetlane normalnie
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.ERROR)
+
+    # Dodaj formatery do handlerów (opcjonalne, ale zalecane)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    # Usuń domyślne handlery, aby uniknąć podwójnych logów
+    for handler in logger.handlers:
+        logger.removeHandler(handler)
+
+    # Dodaj handlery do loggera
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    tf_logger = tf.get_logger()
+    for handler in tf_logger.handlers:
+        tf_logger.removeHandler(handler)
+    tf_logger.addHandler(file_handler)
+    tf_logger.addHandler(console_handler)
+
+    def custom_warning(message, category, filename, lineno, file=None, line=None):
+        log_message = f'{filename}:{lineno}: {category.__name__}: {message}\n'
+        logger.warning(log_message)
+
+    warnings.showwarning = custom_warning
 

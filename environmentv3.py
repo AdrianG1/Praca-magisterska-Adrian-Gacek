@@ -42,20 +42,21 @@ class SystemState():
 
 
     def __init__(self):
-        #self.T_sp = 0      # nastawiona wartość temperatury
-        self.T = 0          # aktualna wartość temperatury
+        self.T_sp = 0      # nastawiona wartość temperatury
+        # self.T = 0          # aktualna wartość temperatury
         self.T_diff = 0     # błąd sterowania
 
 
     def __str__(self):
-        return f"State: [T_diff:{self.T_diff:.02f},T:{self.T:.02f}]"
+        return f"State: [T_diff:{self.T_diff:.02f},T_sp:{self.T_sp:.02f}]"
 
     def as_tensor(self):
-        return tf.constant([self.T, self.T_diff], dtype=tf.float32)
+        return tf.constant([self.T_sp, self.T_diff], dtype=tf.float32)
 
     def as_array(self):
-        return np.array([self.T, self.T_diff], dtype=np.float32)
+        return np.array([self.T_sp, self.T_diff], dtype=np.float32)
 
+    
 
 class Environment(py_environment.PyEnvironment):
     SPEEDUP = 100
@@ -133,7 +134,7 @@ class Environment(py_environment.PyEnvironment):
                 # Otwieram nowe laboratorium z nowym zegarem i generatorem nastaw
                 lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
                 self.lab = lab()
-                self.clk = tclab.clock(self.episode_time, step=self.STEP)
+                self.clk = tclab.clock(self.episode_time)
                 self._T_gen = setpoint_gen(self.clk, self._seed)
 
         self.__set_control(0)
@@ -169,8 +170,8 @@ class Environment(py_environment.PyEnvironment):
         """ Wyznaczanie nagrody """
 
         # komfort temperaturowy
-        diff = abs(self.state.T_diff - 0.5) #abs(self.state.T - self.state.T_sp)
-        comfort = -diff
+        diff = np.sqrt(np.abs(self.state.T_diff))
+        comfort = -diff+4 if diff < 4 else -diff
         
         # zużycie energii
         energy = action / 100
@@ -179,16 +180,17 @@ class Environment(py_environment.PyEnvironment):
     def __state_update(self):
         """aktualizacja stanów normalizacja do wartości 0-1"""
         T =  self.lab.T1
-        self.state.T = T / 100             
-        self.state.T_diff = (next(self._T_gen) - T) / 200 + 0.5
-        #self.state
+        T_sp = next(self._T_gen)
+        # self.state.T = T / 100             
+        self.state.T_sp = T_sp
+        self.state.T_diff = (T_sp - T) #/ 200 + 0.5
 
     def __set_control(self, action):
         """ Ustawianie sterowania """
         if self.discret:
             self.lab.Q1((100 / (self.NUM_OF_ACTIONS - 1)) * action)
         else:
-            self.lab.Q1(max(min(100, action), 0))
+            self.lab.Q1(max(min(1, action), 0)*100)
 
     def __gen_spec(self):
         """ generowanie specyfikacji określającej parametry środowiska """
@@ -198,7 +200,7 @@ class Environment(py_environment.PyEnvironment):
                 shape=(), dtype=np.float32, minimum=0, maximum=self.NUM_OF_ACTIONS-1, name='action')
         else:
             self._action_spec = array_spec.BoundedArraySpec(
-                shape=(), dtype=np.float32, minimum=0, maximum=100.0, name='action')
+                shape=(), dtype=np.float32, minimum=0, maximum=1.0, name='action')
 
         # Define the observation spec (state)
         self._observation_spec = array_spec.ArraySpec(

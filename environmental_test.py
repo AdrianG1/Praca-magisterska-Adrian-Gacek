@@ -16,7 +16,7 @@ def log_memory_usage():
     print(f'\n\n\n\n Memory usage: {memory_use:.2f} MB')
 
 def create_environment():
-    return Environment(discret=False, episode_time=30, seed=123141)
+    return Environment(discret=False, episode_time=30, seed=1231)
 
 
 def main():
@@ -24,7 +24,7 @@ def main():
 
     env = tf_py_environment.TFPyEnvironment(create_environment())
     log_memory_usage()
-
+    env.reset()
 
     rewards = []
     T = []
@@ -35,9 +35,9 @@ def main():
     
 
     log_memory_usage()
-    for i in tqdm(range(12, 24,4)):
+    for i in tqdm(range(9, 20, 7)):
         try:
-            loaded_policy = tf.saved_model.load(f'./policies/SAC{i}')
+            loaded_policy = tf.saved_model.load(f'./policies/td3{i}')
             policy_state = loaded_policy.get_initial_state(batch_size=1)
             time_step = env.reset()
             time_step = ts.TimeStep(
@@ -50,7 +50,6 @@ def main():
             while not time_step.is_last():
                 action_step = loaded_policy.action(time_step, policy_state)
                 policy_state = action_step.state
-
                 time_step = env.step(action_step.action)
                 time_step = ts.TimeStep(
                         step_type=tf.reshape(time_step.step_type, (1, )),
@@ -64,7 +63,7 @@ def main():
                 rewards.append(reward)
                 real_state = abnormalize_state(state)
                 T.append(real_state[:, 0])
-                T_sp.append(real_state[:, 1]+real_state[:, 0])
+                T_sp.append(real_state[:, 1])
                 controls.append(action_step.action)
                 times.append(env.envs[0].time)
         except KeyboardInterrupt:
@@ -101,7 +100,7 @@ def main():
     plt.title('controls')
     plt.savefig('plot/controls.png')
 
-    pd.DataFrame({"time":times, "T": T, "T_diff": T_sp, "rewards":rewards}).to_csv("./csv_data/test_policy.csv")
+    pd.DataFrame({"time":times, "T": T, "T_diff": T_sp, "rewards":rewards, "controls":controls}).to_csv("./csv_data/test_policy.csv")
 
 
 

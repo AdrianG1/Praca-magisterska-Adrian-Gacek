@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from utils import abnormalize_state
 
 class PID():
     Kc   = 6.0 
@@ -14,8 +15,9 @@ class PID():
 
 
     def control(self, observation, time):
-        y, sp = observation[0], observation[1]+observation[0]
-        error = observation[1]
+        real_state = abnormalize_state(observation)
+        y, sp = real_state[0], real_state[1]
+        error = sp - y
 
 
 
@@ -31,6 +33,6 @@ class PID():
         derivative = dy / dt if dt > 0 else 0
 
         control = self.Kc * (error + self.epsilon_integral/self.tauI + self.tauD*derivative) 
-        control = min(100, max(control, 0))
+        control = min(100, max(control, 0)) / 100
 
         return control
