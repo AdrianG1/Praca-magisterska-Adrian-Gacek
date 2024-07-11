@@ -23,17 +23,31 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
 
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 TRAIN_TEST_RATIO = 0.75
 
-critic_learning_rate = 3e-4
-actor_learning_rate = 3e-5
-alpha_learning_rate = 3e-5
+actor_learning_rate             = 0.0006653782419255851
+critic_learning_rate            = actor_learning_rate * 8.172990023254641
 
+actor_input_fc_layer_params     = (209, 148)
+actor_lstm_size                 = (77,)
+actor_output_fc_layer_params    = (216, 100)
 
+critic_joint_fc_layer_params    = None
+critic_lstm_size                = (124,)
+critic_output_fc_layer_params   = (96, 100)
 
-train_sequence_length = 12
+exploration_noise_std           = 0.12507554579935002
+target_update_tau               = 0.005041497519914242
+actor_update_period             = 2
+gamma                           = 0.962232033742456 
+reward_scale_factor             = 0.9874855517385459 
+
+activation_fn                   = tf.keras.activations.relu
+
+train_sequence_length = 4
 num_episodes = 25
+
 
 def configure_agent(env):
 
@@ -46,10 +60,10 @@ def configure_agent(env):
             env.action_spec(),
 
             conv_layer_params=None,
-            input_fc_layer_params=(200, 100),
-            lstm_size=(75,),
-            output_fc_layer_params=(200, 100),
-            activation_fn=tf.keras.activations.relu
+            input_fc_layer_params=actor_input_fc_layer_params,
+            lstm_size=actor_lstm_size,
+            output_fc_layer_params=actor_output_fc_layer_params,
+            activation_fn=activation_fn
         )
 
         critic_net = critic_rnn_network.CriticRnnNetwork(
@@ -57,10 +71,10 @@ def configure_agent(env):
             observation_conv_layer_params=None,
             observation_fc_layer_params=None,
             action_fc_layer_params=None,
-            joint_fc_layer_params=None,
-            lstm_size=(75,),
-            output_fc_layer_params=(200, 100),
-            activation_fn=tf.keras.activations.relu
+            joint_fc_layer_params=critic_joint_fc_layer_params,
+            lstm_size=critic_lstm_size,
+            output_fc_layer_params=critic_output_fc_layer_params,
+            activation_fn=activation_fn
         )
 
         actor_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=actor_learning_rate)
@@ -74,12 +88,12 @@ def configure_agent(env):
             critic_network=critic_net,
             actor_optimizer=actor_optimizer,
             critic_optimizer=critic_optimizer,
-            exploration_noise_std=0.1,
-            target_update_tau=0.005,
+            exploration_noise_std=exploration_noise_std,
+            target_update_tau=target_update_tau,
             target_update_period=1,
-            actor_update_period=2,
-            gamma=0.99,
-            reward_scale_factor=1,
+            actor_update_period=actor_update_period,
+            gamma=gamma,
+            reward_scale_factor=reward_scale_factor,
             td_errors_loss_fn=tf.math.squared_difference
         )
 
@@ -128,6 +142,7 @@ def main(argv=None):
         num_steps=train_sequence_length).prefetch(3)
 
     iterator = iter(dataset)
+    # agent.policy.update(policy_loader.load(f'./policies/t3d3{21}'))    
 
     print("================================== training ======================================================")
     # Run the training loop
@@ -149,8 +164,8 @@ def main(argv=None):
             tqdm.write('step = {0}: mean loss = {1}'.format(step, sum_loss/steps_per_episode))
 
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/td3{episode}', exist_ok=True)
-            saver.save(f'./policies/td3{episode}')
+            os.makedirs(f'./policies/t3d3{episode}', exist_ok=True)
+            saver.save(f'./policies/t3d3{episode}')
         except KeyboardInterrupt:
             break
             print("next")

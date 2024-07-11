@@ -42,9 +42,9 @@ num_episodes = 25
 train_sequence_length = 12
 batch_size = 256 # @param {type:"integer"}
 
-critic_learning_rate = 3e-4 # @param {type:"number"}
-actor_learning_rate = 3e-5 # @param {type:"number"}
-alpha_learning_rate = 3e-5 # @param {type:"number"}
+critic_learning_rate = 3e-3 # @param {type:"number"}
+actor_learning_rate = 3e-4 # @param {type:"number"}
+alpha_learning_rate = 3e-4 # @param {type:"number"}
 
 target_update_tau = 0.005 # @param {type:"number"}
 target_update_period = 10 # @param {type:"number"}
@@ -174,7 +174,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
 
 
 def create_environment():
-    return Environment(discret=False)
+    return Environment(discret=False, episode_time=999999999, seed=13579)
 
 
 def main(argv=None):

@@ -21,16 +21,32 @@ from tf_agents.specs import array_spec
 import os
 
 BATCH_SIZE = 32
-BATCH_SIZE_EVAL = 1
-LEARNING_RATE = 2e-4
 DISCOUNT = 0.75
 TRAIN_TEST_RATIO = 0.75
-NUM_STEPS_DATASET = 2
+NUM_ACTIONS = 6
 
+learning_rate             = 0.0006653782419255851
+
+input_fc_layer_params     = (209, 148)
+lstm_size                 = (77,)
+output_fc_layer_params    = (216, 100)
+
+
+target_update_tau               = 0.005041497519914242
+actor_update_period             = 2
+target_update_period            = 1
+epsilon_greedy                  = 0.1
+gamma                           = 0.962232033742456 
+reward_scale_factor             = 0.9874855517385459 
+
+activation_fn                   = tf.keras.activations.selu
+
+train_sequence_length = 4
+num_episodes = 25
 
 def create_environment():
     #return wrappers.ActionDiscretizeWrapper(Environment(), num_actions=5)
-    return Environment(discret=True)
+    return Environment(discret=True, num_actions=NUM_ACTIONS)
 
 
 
@@ -38,12 +54,12 @@ def configure_agent(env):
     q_net = q_rnn_network.QRnnNetwork(
             env.observation_spec(),
             env.action_spec(),
-            input_fc_layer_params=(200, 100),
-            lstm_size=(40, ),
-            output_fc_layer_params=(200, 100),
-            activation_fn=tf.keras.activations.selu)
+            input_fc_layer_params=input_fc_layer_params,
+            lstm_size=lstm_size,
+            output_fc_layer_params=output_fc_layer_params,
+            activation_fn=activation_fn)
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=2e-4)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     agent = dqn_agent.DqnAgent(
         env.time_step_spec(),
@@ -51,11 +67,11 @@ def configure_agent(env):
         q_network=q_net,
         optimizer=optimizer,
         td_errors_loss_fn=common.element_wise_squared_loss,
-        epsilon_greedy = 0.1,
+        epsilon_greedy = epsilon_greedy,
         n_step_update = 1,
-        target_update_tau = 0.01,
-        target_update_period = 2,
-        gamma = 0.99)
+        target_update_tau = target_update_tau,
+        target_update_period = target_update_period,
+        gamma = gamma)
 
     return agent
 
@@ -75,7 +91,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer):
         state = record.iloc[:state_dim].values  # Convert to numpy array
         action = record["Akcje"]
         reward = record["Nagrody"]
-        discrete_action = tf.expand_dims(discretize(action), axis=-1)
+        discrete_action = tf.expand_dims(discretize(action, num_actions=NUM_ACTIONS), axis=-1)
 
         traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
                         tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
@@ -89,6 +105,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer):
 
         if  idx > train_end:
             break
+    return trajs
 
 
 def main(argv=None):
@@ -118,7 +135,7 @@ def main(argv=None):
     # Run the training loop
     num_episodes = 25
     steps_per_episode = int(len(replay_buffer)) // BATCH_SIZE
-    losses = np.full(num_episodes*steps_per_episode+1, -1)
+    losses = []
 
     for episode in range(num_episodes):
         try:
@@ -127,7 +144,7 @@ def main(argv=None):
                 experience = next(iterator)
                 train_loss = agent.train(experience).loss
                 step = agent.train_step_counter.numpy()
-                losses[step] = train_loss
+                losses.append(train_loss)
             tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
 
             saver = policy_saver.PolicySaver(agent.policy)

@@ -1,6 +1,7 @@
 import tensorflow as tf
 from environmentv3 import Environment
 import os
+from utils import plot_loss, configure_tensorflow_logging
 
 from tf_agents.agents.ddpg.actor_rnn_network import ActorRnnNetwork
 from tf_agents.agents.ddpg import critic_rnn_network
@@ -30,28 +31,34 @@ from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
-BATCH_SIZE = 32
-BATCH_SIZE_EVAL = 1
-LEARNING_RATE = 2e-4
-DISCOUNT = 0.75
+POLICY_LOAD_ID = 12
+
+BATCH_SIZE = 4
 TRAIN_TEST_RATIO = 0.75
-NUM_STEPS_DATASET = 2
-POLICY_LOAD_ID = 19
 
-critic_learning_rate = 3e-4
-actor_learning_rate = 3e-5 
-alpha_learning_rate = 3e-5 
+actor_learning_rate             =1.863793015696307e-04
+critic_learning_rate            = actor_learning_rate *156.48294088634958
 
-target_update_tau = 0.05 # @param {type:"number"}
-target_update_period = 10 # @param {type:"number"}
-gamma = 0.9182588601932395 # @param {type:"number"}
-reward_scale_factor = 1 # @param {type:"number"}
+actor_input_fc_layer_params     = (209, 148)
+actor_lstm_size                 = (77,)
+actor_output_fc_layer_params    = (216, 100)
 
-actor_fc_layer_params = (75, 75, 75, 75, 75)
-critic_joint_fc_layer_params = (75, 75, 75, 75, 75)
+critic_joint_fc_layer_params    = None
+critic_lstm_size                = (124,)
+critic_output_fc_layer_params   = (96, 100)
 
-train_sequence_length = 10
-num_episodes = 20
+exploration_noise_std           = 0.1282693
+target_update_tau               = 0.0044578903484011854
+actor_update_period             = 5
+gamma                           = 0.91626
+reward_scale_factor             = 1.3973179008462675
+
+activation_fn                   = tf.keras.activations.elu
+e_coef                          = 62
+buffer_size                     = 28
+
+train_sequence_length = 4
+num_episodes = 50
 
 def configure_agent(env):
 
@@ -64,9 +71,10 @@ def configure_agent(env):
             env.action_spec(),
 
             conv_layer_params=None,
-            input_fc_layer_params=(200, 100),
-            lstm_size=(75,),
-            output_fc_layer_params=(200, 100)
+            input_fc_layer_params=actor_input_fc_layer_params,
+            lstm_size=actor_lstm_size,
+            output_fc_layer_params=actor_output_fc_layer_params,
+            activation_fn=activation_fn
         )
 
         critic_net = critic_rnn_network.CriticRnnNetwork(
@@ -74,9 +82,10 @@ def configure_agent(env):
             observation_conv_layer_params=None,
             observation_fc_layer_params=None,
             action_fc_layer_params=None,
-            joint_fc_layer_params=None,
-            lstm_size=(75,),
-            output_fc_layer_params=(200, 100)
+            joint_fc_layer_params=critic_joint_fc_layer_params,
+            lstm_size=critic_lstm_size,
+            output_fc_layer_params=critic_output_fc_layer_params,
+            activation_fn=activation_fn
         )
 
         actor_optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=actor_learning_rate)
@@ -90,48 +99,22 @@ def configure_agent(env):
             critic_network=critic_net,
             actor_optimizer=actor_optimizer,
             critic_optimizer=critic_optimizer,
-            exploration_noise_std=0.1,
-            target_update_tau=0.005,
-            target_update_period=2,
-            actor_update_period=2,
-            gamma=0.99
+            exploration_noise_std=exploration_noise_std,
+            target_update_tau=target_update_tau,
+            target_update_period=1,
+            actor_update_period=actor_update_period,
+            gamma=gamma,
+            reward_scale_factor=reward_scale_factor,
+            td_errors_loss_fn=tf.math.squared_difference
         )
+        
 
         agent.initialize()
     return agent
 
-global trajs
-trajs = []
-
-def plot_trajs():
-    global trajs
-    states = np.squeeze(np.array([traj.observation for traj in trajs]))
-    actions = np.squeeze(np.array([traj.action for traj in trajs]))
-    import matplotlib.pyplot as plt
-    plt.figure()
-    plt.plot(range(len(states)), states[:, 0:2])
-    plt.title('losses')
-    plt.savefig('./plot/states_trajs.png')
-    plt.figure()
-    plt.plot(range(len(actions)), actions)
-    plt.title('trajectory actions')
-    plt.savefig('./plot/actions_trajs.png')
-
-def plot_loss(losses, num_episodes=0):
-    import matplotlib.pyplot as plt
-
-    plt.figure()
-    # plt.plot(range(len(losses)), losses)
-    if num_episodes > 0:
-        n = len(losses)//num_episodes
-        mean_loss_for_episode = [np.mean(losses[i:i+n]) for i in range(0, len(losses), n)]
-        plt.plot(range(0, len(losses), n), mean_loss_for_episode)
-    plt.title('losses')
-    plt.savefig('./plot/losses.png')
-
 
 def create_environment():
-    return Environment(discret=False)
+    return Environment(discret=False, episode_time=999999, seed=3214152, scaler_path=None, c_coef=1, e_coef=e_coef)
 
 
 def main(argv=None):
@@ -145,7 +128,7 @@ def main(argv=None):
     agent = configure_agent(train_py_env)
 
     agent.initialize()
-    tf_policy = policy_loader.load(f'./policies/td3{POLICY_LOAD_ID}')    
+    tf_policy = policy_loader.load(f'./policies/t3d3{POLICY_LOAD_ID}')    
     agent.policy.update(tf_policy)
 
     # (Optional) Reset the agent's policy state
@@ -160,7 +143,7 @@ def main(argv=None):
 
     table = reverb.Table(
         table_name,
-        max_size=BATCH_SIZE,
+        max_size=buffer_size,
         sampler=reverb.selectors.Uniform(),
         remover=reverb.selectors.Fifo(),
         rate_limiter=reverb.rate_limiters.MinSize(1),
@@ -204,27 +187,31 @@ def main(argv=None):
 
     policy_state = agent.policy.get_initial_state(batch_size=1)
     print("================================== training ======================================================")
+    configure_tensorflow_logging()
     # Run the training loop
-    num_episodes = 50
-    steps_per_episode = 50
+    steps_per_episode = 10
     losses = []
 
     for episode in tqdm(range(num_episodes)):
         try:
+            sum_diff = 0
+            sum_reward = 0
             for i in range(steps_per_episode):
                 # Collect a few steps and save to the replay buffer.
                 time_step, policy_state = collect_driver.run(time_step, policy_state)
 
                 # Sample a batch of data from the buffer and update the agent's network.
                 experience, _ = next(iterator)
-                print("step ", i)
                 train_loss = agent.train(experience).loss
 
                 step = agent.train_step_counter.numpy()
                 losses.append(train_loss)
 
-            tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
+                sum_diff += np.sum(np.abs(experience.observation[:, 1]))/np.sum(experience.observation[:, 1].shape)
+                sum_reward += np.sum(np.abs(experience.reward))/np.sum(experience.reward.shape)
+                tqdm.write('step = {0}: loss = {1}, reward = {2}'.format(step, train_loss, sum_reward))
 
+            tqdm.write('episode = {0}: sum difference = {1}'.format(episode, sum_diff))
             saver = policy_saver.PolicySaver(agent.policy)
             os.makedirs(f'./policies/td3_online{episode}', exist_ok=True)
             saver.save(f'./policies/td3_online{episode}')

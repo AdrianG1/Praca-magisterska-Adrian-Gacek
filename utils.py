@@ -56,11 +56,9 @@ def normalize_state(state):
 
 def discretize(action, num_actions=5):
     """dyskretyzacja dla DQN"""
-
-    a = (50/(num_actions-1))
-    b = (100/(num_actions-1))
-    clipped_action = max(min(action, 100), 0)
-    return tf.constant((clipped_action + a) // b, dtype=tf.float32)
+    clipped_action = max(min(action, 1), 0)
+    ai = (clipped_action*100+(50/(num_actions-1)))//(100/(num_actions-1))
+    return tf.constant(ai, dtype=tf.float32)
     
 def undiscretize(action, num_actions=5):
     """odwrócenie dyskretyzacji dla DQN"""
@@ -123,7 +121,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, train_t
     for idx, record in df.iterrows():
 
         state = record.iloc[:state_dim].values  # Convert to numpy array
-        action = tf.constant(record["Akcje"]/100, dtype=tf.float32)
+        action = tf.constant(record["Akcje"], dtype=tf.float32)
         reward = record["Nagrody"]
         continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
 

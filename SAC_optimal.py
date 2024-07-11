@@ -1,14 +1,16 @@
 import tensorflow as tf
 from environmentv3 import Environment
 import os
-from utils import plot_trajs
+import sys
+
+from utils import plot_trajs, get_data_spec
 import optuna
-import SAC
+from copy import deepcopy
 from pandas import read_csv
 
-from tf_agents.agents.ddpg import critic_network
+from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.agents.sac import sac_agent
-from tf_agents.networks import actor_distribution_network
+from tf_agents.networks import actor_distribution_rnn_network
 from tf_agents.utils import common
 import tensorflow as tf
 import numpy as np
@@ -27,126 +29,222 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 from tf_agents.trajectories import Trajectory
 
-BATCH_SIZE = 1
 TRAIN_TEST_RATIO = 0.75
 num_steps_dataset = 2
+TRAINING_STEPS = 20
 
-# critic_learning_rate = 3e-4
-# actor_learning_rate = 3e-5 
-# alpha_learning_rate = 3e-5 
+def evaluate_policy2(agent):
+    reward = 0
+    env = tf_py_environment.TFPyEnvironment(Environment(discret=False, episode_time=30, seed=5132))
 
-# target_update_tau = 0.005 
-# target_update_period = 10 
-# gamma = 0.99 
-# reward_scale_factor = 1.0 
+    policy = deepcopy(agent.policy)
+    policy_state = policy.get_initial_state(batch_size=1)
+    time_step = env.reset()
+    time_step = ts.TimeStep(
+            step_type=tf.reshape(time_step.step_type, (1, )),
+            reward=tf.reshape(time_step.reward, (1, )),
+            discount=time_step.discount,
+            observation= tf.reshape(time_step.observation, (1, 2))
+            )
+    
+    while not time_step.is_last():
+        action_step = policy.action(time_step, policy_state)
+        policy_state = action_step.state
+        time_step = env.step(action_step.action)
+        time_step = ts.TimeStep(
+                step_type=tf.reshape(time_step.step_type, (1, )),
+                reward=tf.reshape(time_step.reward, (1, )),
+                discount=time_step.discount,
+                observation= tf.reshape(time_step.observation, (1, 2))
+                )
+        reward += time_step.reward
 
-# actor_fc_layer_params = (75, 75, 75, 75)
-# critic_joint_fc_layer_params =(75, 75, 75, 75)
-# #struktura sieci
-# num_episodes = 25
-# 
-# td_errors_loss_fn = tf.math.squared_difference
+    return reward
 
 
-def evaluate_policy(agent, num_test_steps=1000):
-    global test_buffer
+def evaluate_policy(agent_original, num_test_steps=1000):
+    global test_buffer, net_structure
     difference = 0
 
+    agent = deepcopy(agent_original)
+    policy_state = agent.policy.get_initial_state(batch_size=1)
     for i in range(min(len(test_buffer), num_test_steps)):
         experience = test_buffer[i]
-
         time_step = ts.TimeStep(
                 step_type=experience.step_type,
                 reward=experience.reward,
                 discount=experience.discount,
                 observation= tf.reshape(experience.observation, (1, 2))
                 )
-        action_step = agent.policy.action(time_step)
-        difference += abs(float((experience.action - action_step.action).numpy()[0][0]))
-    
+        action_step = agent.policy.action(time_step, policy_state)
+        policy_state = action_step.state
+
+        difference += abs(float((experience.action - action_step.action).numpy()[0]))
     return difference 
 
 
 
-def training_agent(agent, num_episodes):
-    steps_per_episode = 300
-    global train_iterator
-    min_diff = np.inf
-    min_diff_ep = -1
+def training_agent(agent, train_iterator, num_episodes):
+    steps_per_episode = 110
+    max_rating = np.inf
+    max_rating_ep = -1
 
     for episode in range(num_episodes):
         for _ in range(steps_per_episode):
             experience, _ = next(train_iterator)
             train_loss = agent.train(experience).loss
 
-        rating = evaluate_policy(agent)
-        if rating < min_diff:
-            min_diff = rating
-            min_diff_ep = episode
+
+        if episode in [14, 19]:
+            rating = evaluate_policy(agent)
+            if rating < max_rating:
+                max_rating = rating
+                max_rating_ep = episode
      
-    print("\n\n\n min diff (ep): ", min_diff,  min_diff_ep, "\n")
-    return min_diff
+    print("\n\n\n min diff (ep): ", max_rating,  max_rating_ep, "\n")
+    return max_rating
 
 
 def objective(trial):
-    global env
+    global env, train_buffer
+    try:
+    # num_of_layers = trial.suggest_int('num_of_layers', 2, 8)
+        batch_size_pow = trial.suggest_int('batch_size 2^', 3, 9)
+        batch_size = 2**batch_size_pow
 
-    num_of_layers = trial.suggest_int('num_of_layers', 2, 8)
-    actor_fc_layer_params = tuple([trial.suggest_int(f'actor_layer{i}', 64, 256) for i in range(num_of_layers)])
-    critic_joint_fc_layer_params = tuple([trial.suggest_int(f'critic_layer{i}', 64, 256) for i in range(num_of_layers)])
-    actor_learning_rate = trial.suggest_loguniform('actor_learning_rate', 1e-5, 1e-3)
-    critic_learning_rate = trial.suggest_loguniform('critic_learning_rate', 1e-5, 1e-3)
-    alpha_learning_rate = trial.suggest_loguniform('alpha_learning_rate', 1e-5, 1e-3)
-    target_update_tau = trial.suggest_uniform('target_update_tau', 0.001, 0.05)
-    target_update_period = trial.suggest_int('target_update_period', 1, 10)
-    gamma = trial.suggest_uniform('gamma', 0.9, 0.999)
-    reward_scale_factor = trial.suggest_uniform('reward_scale_factor', 0.1, 1.0)
-    td_errors_loss_fn = tf.math.squared_difference
+        # net structure
+        num_actor_fc_input = trial.suggest_int('num_actor_fc_input', 0, 2)
+        if  num_actor_fc_input == 3:
+            actor_fc_input = (
+                trial.suggest_int('actor_fc_input0', 64, 256),
+                trial.suggest_int('actor_fc_input1', 64, 256),
+                trial.suggest_int('actor_fc_input2', 32, 256)
+            )
+        if  num_actor_fc_input == 2:
+            actor_fc_input = (
+                trial.suggest_int('actor_fc_input0', 64, 256),
+                trial.suggest_int('actor_fc_input1', 32, 256)
+            )
+        elif  num_actor_fc_input == 1:
+            actor_fc_input = (
+                trial.suggest_int('actor_fc_input0', 64, 256),
+            )
+        else:
+            actor_fc_input = None
+
+
+        actor_lstm = (
+            trial.suggest_int('actor_lstm_size', 32, 128),
+        )
+
+        num_actor_fc_output = trial.suggest_int('num_actor_fc_output', 1, 2)
+        if num_actor_fc_output == 3:
+            actor_fc_output = (
+                trial.suggest_int('actor_fc_output0', 64, 256),
+                trial.suggest_int('actor_fc_output1', 64, 256),
+                100 #trial.suggest_int('actor_fc_output1', 64, 256)
+            )
+        if num_actor_fc_output == 2:
+            actor_fc_output = (
+                trial.suggest_int('actor_fc_output0', 64, 256),
+                100 #trial.suggest_int('actor_fc_output1', 64, 256)
+            )
+        else:
+            actor_fc_output = (100,)
+
+        num_critic_fc_input = trial.suggest_int('num_critic_fc_input', 0, 2)
+        if num_critic_fc_input == 2:
+            critic_fc_input = (
+                trial.suggest_int('critic_fc_input0', 64, 256),
+                trial.suggest_int('critic_fc_input1', 64, 256)
+            )        
+        elif num_critic_fc_input == 1:
+            critic_fc_input = (trial.suggest_int('critic_fc_input0', 64, 256),)
+        else:
+            critic_fc_input = None
+
+        critic_lstm = (
+            trial.suggest_int('critic_lstm_size', 32, 128),
+        )
+        num_critic_fc_output = trial.suggest_int('num_critic_fc_output', 1, 2)
+        if num_critic_fc_output == 3:
+            critic_fc_output = (
+                trial.suggest_int('critic_fc_output0', 64, 256),
+                trial.suggest_int('critic_fc_output1', 64, 256),
+                100 #trial.suggest_int('critic_fc_output1', 64, 256),
+            )      
+        elif num_critic_fc_output == 2:
+            critic_fc_output = (
+                trial.suggest_int('critic_fc_output0', 64, 256),
+                100 #trial.suggest_int('critic_fc_output1', 64, 256),
+            )
+        else:
+            critic_fc_output = (100,)
+
+        actor_learning_rate = trial.suggest_loguniform('actor_learning_rate', 1e-6, 3e-3)
+        critic_learning_rate_ratio = trial.suggest_loguniform('critic_learning_rate_ratio', 1e0, 1e2)
+        critic_learning_rate = critic_learning_rate_ratio * actor_learning_rate
+        alpha_learning_rate = trial.suggest_loguniform('alpha_learning_rate', 1e-6, 3e-3)
+        target_update_tau = trial.suggest_uniform('target_update_tau', 0.001, 0.05)
+        target_update_period = trial.suggest_int('target_update_period', 1, 10)
+        gamma = trial.suggest_uniform('gamma', 0.8, 0.999)
+        reward_scale_factor = trial.suggest_loguniform('reward_scale_factor', 1e-2, 1e2)
+        td_errors_loss_fn = tf.math.squared_difference
+        
+        agent = configure_agent(env, 
+                                critic_learning_rate,actor_learning_rate, alpha_learning_rate,
+                                target_update_tau, target_update_period,
+                                gamma, reward_scale_factor,
+                                actor_fc_input, actor_lstm, actor_fc_output,
+                                critic_lstm, critic_fc_output, critic_fc_input,
+                                td_errors_loss_fn)
     
-    agent = configure_agent(env, 
-                            critic_learning_rate,actor_learning_rate, alpha_learning_rate,
-                            target_update_tau, target_update_period,
-                            gamma, reward_scale_factor,
-                            actor_fc_layer_params, critic_joint_fc_layer_params,
-                            td_errors_loss_fn)
- 
+        train_dataset = train_buffer.as_dataset(
+            num_parallel_calls=3, 
+            sample_batch_size=batch_size, 
+            num_steps=num_steps_dataset).prefetch(3)
 
-    max_rating = training_agent(agent, 30)
+        train_iterator = iter(train_dataset)
+
+        max_rating = training_agent(agent, train_iterator, TRAINING_STEPS)
+        del agent, train_dataset, train_iterator
+    except KeyboardInterrupt:
+        raise ValueError("Trial stopped, rating undefined")
+
     return max_rating
 
-def configure_agent(env_spec, 
+def configure_agent(env, 
                     critic_learning_rate,actor_learning_rate, alpha_learning_rate,
                     target_update_tau, target_update_period,
                     gamma, reward_scale_factor,
-                    actor_fc_layer_params, critic_joint_fc_layer_params,
-                    td_errors_loss_fn
-                    ):
+                    actor_fc_input, actor_lstm, actor_fc_output,
+                    critic_lstm, critic_fc_output, critic_fc_input,
+                    td_errors_loss_fn):
 
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
 
     # Actor network
     with strategy.scope():
-        actor_net = actor_distribution_network.ActorDistributionNetwork(
-                                env_spec.observation_spec(),
-                                env_spec.action_spec(),
-                                fc_layer_params=actor_fc_layer_params,
-                                continuous_projection_net=(
-                                                tanh_normal_projection_network.TanhNormalProjectionNetwork))
+        actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+                                env.observation_spec(),
+                                env.action_spec(),
+                                input_fc_layer_params=actor_fc_input,
+                                lstm_size=actor_lstm,
+                                output_fc_layer_params=actor_fc_output)
 
 
     # Critic network
-        critic_net = critic_network.CriticNetwork(
-                (env_spec.observation_spec(), env_spec.action_spec()),
-                observation_fc_layer_params=None,
-                action_fc_layer_params=None,
-                joint_fc_layer_params=critic_joint_fc_layer_params,
-                kernel_initializer='glorot_uniform',
-                last_kernel_initializer='glorot_uniform')
+        critic_net = critic_rnn_network.CriticRnnNetwork(
+            (env.observation_spec(), env.action_spec()),
+            joint_fc_layer_params=critic_fc_input,
+            lstm_size=critic_lstm,
+            output_fc_layer_params=critic_fc_output
+        )
 
 
         agent = sac_agent.SacAgent(
-                env_spec.time_step_spec(),
-                env_spec.action_spec(),
+                env.time_step_spec(),
+                env.action_spec(),
                 actor_network=actor_net,
                 critic_network=critic_net,
                 actor_optimizer=tf.keras.optimizers.Adam(
@@ -162,14 +260,13 @@ def configure_agent(env_spec,
                 reward_scale_factor=reward_scale_factor,
                 train_step_counter=tf.Variable(0))
 
-    
         agent.initialize()
 
     return agent
 
 
 def create_environment():
-    return Environment(discret=False)
+    return Environment(discret=False, episode_time=60, seed=9983)
 
 
 def get_trajectory_from_csv(path, state_dim, train_buffer, test_buffer, TRAIN_TEST_RATIO):
@@ -211,17 +308,17 @@ def main(argv=None):
     env = ParallelPyEnvironment([create_environment] * 1)
     env = tf_py_environment.TFPyEnvironment(env)
 
-    agent = SAC.configure_agent(env)
 
-    agent.train = common.function(agent.train)
+
+    global test_buffer, train_buffer, strategy
 
     train_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-                        data_spec=agent.collect_data_spec,
-                        batch_size=env.batch_size,
+                        data_spec=get_data_spec(),
+                        batch_size=1,
                         max_length=20000)
-    global test_buffer
     test_buffer = []
-    del agent
+
+    strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
 
     print("================================== collecting data ===============================================")
     get_trajectory_from_csv("./csv_data/trajectory.csv", 2, train_buffer, test_buffer, TRAIN_TEST_RATIO)
@@ -230,27 +327,26 @@ def main(argv=None):
     # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
     # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
 
-    # Dataset generates trajectories with shape [Bx2x...]
-    train_dataset = train_buffer.as_dataset(
-        num_parallel_calls=3, 
-        sample_batch_size=BATCH_SIZE, 
-        num_steps=num_steps_dataset).prefetch(3)
-
-    global train_iterator
-    train_iterator = iter(train_dataset)
 
     print("================================== optimizing ======================================================")
+    original_stdout = sys.stdout
+    with open('optuna_output.log', 'w') as f:
+        # Redirect stdout to the file
+        sys.stdout = f
 
-    study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=100)
-
-    print("Best trial:")
-    best_trial = study.best_trial
-    print("  Value: {}".format(best_trial.value))
-    print("  Params: ")
-    for key, value in best_trial.params.items():
-        print("    {}: {}".format(key, value))
-
+        try:
+            study = optuna.create_study(direction='minimize')
+            study.optimize(objective, n_trials=100, catch=(ValueError,), n_jobs=1)
+        except KeyboardInterrupt:
+            pass   
+        print("Best trial:")
+        best_trial = study.best_trial
+        print("  Value: {}".format(best_trial.value))
+        print("  Params: ")
+        for key, value in best_trial.params.items():
+            print("    {}: {}".format(key, value))
+        
+        sys.stdout = original_stdout
         
     print("done")
 

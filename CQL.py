@@ -33,10 +33,10 @@ critic_learning_rate = 3e-4
 actor_learning_rate = 1.21e-5
 alpha_learning_rate = 3e-5 
 
-cql_alpha=0.78,
-include_critic_entropy_term=True,
-num_cql_samples=12,
-use_lagrange_cql_alpha=False,
+cql_alpha=0.78
+include_critic_entropy_term=True
+num_cql_samples=12
+use_lagrange_cql_alpha=False
 
 target_update_tau = 0.0017 
 target_update_period = 10 
@@ -48,9 +48,9 @@ actor_lstm_size=(97,)
 actor_output_fc_layer_params=(106, 100)
 actor_activation_fn=tf.keras.activations.relu
 
-critic_joint_fc_layer_params=(65, 247),
-critic_lstm_size=(105,),
-critic_output_fc_layer_params=(199, 100),
+critic_joint_fc_layer_params=(65, 247)
+critic_lstm_size=(105,)
+critic_output_fc_layer_params=(199, 100)
 critic_activation_fn=tf.keras.activations.relu
 
 
@@ -140,7 +140,7 @@ def main(argv=None):
     print("================================== collecting data ===============================================")
     test_buffer = []
 
-    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, test_buffer)
+    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
     plot_trajs(trajs)
 
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)

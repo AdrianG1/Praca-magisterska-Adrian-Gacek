@@ -1,7 +1,7 @@
 import tensorflow as tf
 from environmentv3 import Environment
 import os
-from utils import evaluate_policy, plot_loss, plot_trajs
+from utils import evaluate_policy, plot_loss, plot_trajs, get_trajectory_from_csv, configure_tensorflow_logging
 
 from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.agents.sac import sac_agent
@@ -15,35 +15,41 @@ import multiprocessing
 import functools
 from tf_agents.system import multiprocessing
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', )
 from tf_agents.environments import ParallelPyEnvironment
 from tf_agents.utils import common
-from tf_agents.policies import policy_saver
+from tf_agents.policies import policy_saver, policy_loader
 from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
-BATCH_SIZE = 32
-BATCH_SIZE_EVAL = 1
-LEARNING_RATE = 2e-4
-DISCOUNT = 0.75
+BATCH_SIZE = 64
 TRAIN_TEST_RATIO = 0.75
-NUM_STEPS_DATASET = 2
 
-num_episodes = 25
+actor_learning_rate             = 0.00006653782419255851
+critic_learning_rate            = actor_learning_rate * 8.172990023254641
+alpha_learning_rate             = 0.00006653782419255851
+
+
+actor_input_fc_layer_params     = (209, 148)
+actor_lstm_size                 = (77,)
+actor_output_fc_layer_params    = (216, 100)
+
+critic_joint_fc_layer_params    = None
+critic_lstm_size                = (124,)
+critic_output_fc_layer_params   = (96, 100)
+
+target_update_tau               = 0.005041497519914242*2
+target_update_period            = 1
+actor_update_period             = 2
+gamma                           = 0.962232033742456 
+reward_scale_factor             = 0.9874855517385459 
+
+activation_fn                   = tf.keras.activations.relu
+
 train_sequence_length = 12
-batch_size = 256 # @param {type:"integer"}
-
-critic_learning_rate = 3e-3 # @param {type:"number"}
-actor_learning_rate = 3e-4 # @param {type:"number"}
-alpha_learning_rate = 3e-4 # @param {type:"number"}
-
-target_update_tau = 0.005 # @param {type:"number"}
-target_update_period = 10 # @param {type:"number"}
-gamma = 0.99 # @param {type:"number"}
-reward_scale_factor = 1.0 # @param {type:"number"}
-
+num_episodes = 25
 
 def configure_agent(env):
 
@@ -54,11 +60,11 @@ def configure_agent(env):
         actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
                                 env.observation_spec(),
                                 env.action_spec(),
-                                input_fc_layer_params=(200, 100),
+                                input_fc_layer_params=actor_input_fc_layer_params,
                                 input_dropout_layer_params=None,
-                                lstm_size=(75,),
-                                output_fc_layer_params=(200, 100),
-                                activation_fn=tf.keras.activations.selu)
+                                lstm_size=actor_lstm_size,
+                                output_fc_layer_params=actor_output_fc_layer_params,
+                                activation_fn=activation_fn)
 
 
     # Critic network
@@ -67,9 +73,10 @@ def configure_agent(env):
             observation_conv_layer_params=None,
             observation_fc_layer_params=None,
             action_fc_layer_params=None,
-            joint_fc_layer_params=None,
-            lstm_size=(75,),
-            output_fc_layer_params=(200, 100)
+            joint_fc_layer_params=critic_joint_fc_layer_params,
+            lstm_size=critic_lstm_size,
+            output_fc_layer_params=critic_output_fc_layer_params,
+            activation_fn=activation_fn
         )
 
 
@@ -89,45 +96,12 @@ def configure_agent(env):
                 td_errors_loss_fn=tf.math.squared_difference,
                 gamma=gamma,
                 reward_scale_factor=reward_scale_factor,
+                initial_log_alpha=0.5,
                 train_step_counter=tf.Variable(0))
 
-    
         agent.initialize()
 
     return agent
-
-def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer):
-    from pandas import read_csv
-    df = read_csv(path, index_col=0)
-
-    global trajs
-    trajs = []
-    
-    global actions_representation
-    actions_representation = {}
-
-    train_end = len(df) * TRAIN_TEST_RATIO
-    for idx, record in df.iterrows():
-
-        state = record.iloc[:state_dim].values  # Convert to numpy array
-        action = tf.constant(record["Akcje"], dtype=tf.float32)
-        reward = record["Nagrody"]
-        continous_action = tf.expand_dims(tf.clip_by_value(action, 0, 100), axis=-1)
-
-        traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
-                        tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
-                        continous_action, 
-                        (), 
-                        tf.constant(1, dtype=tf.int32, shape=(1,)),
-                        tf.constant(reward, dtype=tf.float32, shape=(1,)), 
-                        tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
-        trajs.append(traj)
-
-
-        if  idx < train_end:    
-            replay_buffer.add_batch(traj)
-        else:
-            test_buffer.append(traj)
 
 
 
@@ -141,8 +115,9 @@ def main(argv=None):
     if argv is None:
         argv = []
 
-    env = ParallelPyEnvironment([create_environment] * 1)
-    train_env = tf_py_environment.TFPyEnvironment(env)
+    configure_tensorflow_logging()
+
+    train_env = tf_py_environment.TFPyEnvironment(create_environment)
 
     agent = configure_agent(train_env)
 
@@ -152,13 +127,12 @@ def main(argv=None):
                         data_spec=agent.collect_data_spec,
                         batch_size=train_env.batch_size,
                         max_length=20000)
-    env.close()
-    del train_env, env
+    del train_env
     
     print("================================== collecting data ===============================================")
     test_buffer = []
 
-    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, test_buffer)
+    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
     plot_trajs(trajs)
 
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
@@ -177,6 +151,7 @@ def main(argv=None):
     # Run the training loop
     steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE
     losses = np.full(num_episodes*steps_per_episode+1, -1)
+    # agent.policy.update(policy_loader.load("./policies/SAC40"))
 
     for episode in tqdm(range(num_episodes)):
         try:
@@ -186,8 +161,8 @@ def main(argv=None):
                 train_loss = agent.train(experience).loss
                 step = agent.train_step_counter.numpy()
                 losses[step] = train_loss
-            tqdm.write('\nstep = {0}: loss = {1}\n'.format(step, train_loss))
-            if episode % 5 == 0:
+            tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
+            if episode % 5 == 4:
                 tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
 
 

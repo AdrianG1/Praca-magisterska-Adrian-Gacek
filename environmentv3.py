@@ -11,12 +11,13 @@ from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.trajectories.time_step import TimeStep
 import contextlib
+import pickle
 
 
 # genertor nastaw temperatury
 def setpoint_gen(clk, seed=123141):
     rng = random.Random(seed)
-    lower_constraint = 200  # minimalny okres zmian nastaw temperatury [s]
+    lower_constraint = 240  # minimalny okres zmian nastaw temperatury [s]
     upper_constraint = 600  # maksymalny okres zmian nastaw temperatury [s]
     min_T = 30              # minimalna wartość nastaw temperatury [*C]
     max_T = 70              # maksymalna wartość nastaw temperatury [*C]
@@ -60,20 +61,19 @@ class SystemState():
 
 class Environment(py_environment.PyEnvironment):
     SPEEDUP = 100
-    #EPISODE_TIME = 9999999999 * 60 #[s]
-    C_COEF = 1              # waga składnika nagrody za odstępstwa temperatury od komfortu
-    E_COEF = 0              # waga składnika nagrody za wykorzystaną energię
-    COMFORT_CONSTR = 1      #[*C]  dopuszczalne odstępstwa od nastawionej wartości
-    NUM_OF_ACTIONS = 5      # liczba akcji
-    STEP = 0.5
 
-
-    def __init__(self, discret=False, episode_time=60, seed=123141, num_actions=5):
+    def __init__(self, discret=False, episode_time=60, seed=123141, 
+                 num_actions=5, scaler_path=None, c_coef=1, e_coef=0.1):
+        
         # parametry symulacji
-        self.discret = discret # True jeśli akcje są dyskretne
-        self.NUM_OF_ACTIONS = num_actions
-        self.episode_time = episode_time * 60 
+        self.discret = discret                  # True jeśli akcje są dyskretne
+        self.num_of_actions = num_actions       # określa liczbę akcji
+        self.episode_time = episode_time * 60   # czas trwania eksperymentu
         self._seed = seed 
+
+        self.c_coef = c_coef                    # współczynniki do wyznaczania ...  
+        self.e_coef = e_coef                    # nagrody
+        
         # inicjalizacja stanu początkowego
         self.state = SystemState()
 
@@ -84,9 +84,20 @@ class Environment(py_environment.PyEnvironment):
         self.time = 0
         self.reward = 0
         self._episode_ended = False
+        self.last_action = 0
 
         #inicjalizacja time_step
         self._current_time_step = ts.restart(self.state.as_array())
+
+        # scaler normalizacji nagród
+        if scaler_path is None:
+            self.__normalize_reward = lambda x: x
+        elif isinstance(scaler_path, str):
+            with open(scaler_path, 'rb') as file:
+                self._scaler = pickle.load(file)
+                self.__normalize_reward = lambda x: float(self._scaler.transform([[x]]))
+        else:
+            raise TypeError("scaler_path should be str or None")
 
 
     def __del__(self):
@@ -170,12 +181,19 @@ class Environment(py_environment.PyEnvironment):
         """ Wyznaczanie nagrody """
 
         # komfort temperaturowy
-        diff = np.sqrt(np.abs(self.state.T_diff))
-        comfort = -diff+4 if diff < 4 else -diff
-        
-        # zużycie energii
-        energy = action / 100
-        return comfort * self.C_COEF + energy * self.E_COEF
+        abs_diff = np.abs(self.state.T_diff)
+        sqrt_diff = np.sqrt(abs_diff)
+        comfort =  -sqrt_diff #+3 if abs_diff < 4 else -sqrt_diff
+
+        # # zużycie energii
+        # # energy = action/(np.abs(self.state.T_diff)+1)
+
+        # # nagłe zmiany
+        energy = -np.abs(action - self.last_action)
+        self.last_action = action
+        return self.__normalize_reward(comfort * self.c_coef + self.e_coef * energy) #
+    
+
 
     def __state_update(self):
         """aktualizacja stanów normalizacja do wartości 0-1"""
@@ -188,7 +206,7 @@ class Environment(py_environment.PyEnvironment):
     def __set_control(self, action):
         """ Ustawianie sterowania """
         if self.discret:
-            self.lab.Q1((100 / (self.NUM_OF_ACTIONS - 1)) * action)
+            self.lab.Q1((100 / (self.num_of_actions - 1)) * action)
         else:
             self.lab.Q1(max(min(1, action), 0)*100)
 
@@ -197,7 +215,7 @@ class Environment(py_environment.PyEnvironment):
 
         if self.discret:
             self._action_spec = array_spec.BoundedArraySpec(
-                shape=(), dtype=np.float32, minimum=0, maximum=self.NUM_OF_ACTIONS-1, name='action')
+                shape=(), dtype=np.float32, minimum=0, maximum=self.num_of_actions-1, name='action')
         else:
             self._action_spec = array_spec.BoundedArraySpec(
                 shape=(), dtype=np.float32, minimum=0, maximum=1.0, name='action')
@@ -205,7 +223,6 @@ class Environment(py_environment.PyEnvironment):
         # Define the observation spec (state)
         self._observation_spec = array_spec.ArraySpec(
             shape=(self.state.size,), dtype=np.float32, name='observation')
-
 
         # Define the reward spec
         self._reward_spec = array_spec.ArraySpec(shape=(), dtype=np.float32, name='reward')
