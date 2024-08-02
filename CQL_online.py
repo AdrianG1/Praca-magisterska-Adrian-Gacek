@@ -1,8 +1,12 @@
 import tensorflow as tf
 from environmentv3 import Environment
 import os
-from utils import evaluate_policy, plot_loss, plot_trajs, get_trajectory_from_csv, configure_tensorflow_logging
+from utils import plot_loss, plot_trajs, configure_tensorflow_logging 
+from tf_agents.policies import py_tf_eager_policy
 
+from tf_agents.drivers import py_driver
+import reverb
+from tf_agents.specs import tensor_spec
 from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.agents.cql import cql_sac_agent
 from tf_agents.networks import actor_distribution_rnn_network
@@ -10,29 +14,35 @@ from tf_agents.utils import common
 import tensorflow as tf
 import numpy as np
 from tf_agents.environments import tf_py_environment
+from tf_agents.replay_buffers import reverb_replay_buffer
+from tf_agents.replay_buffers import reverb_utils
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 import multiprocessing
 import functools
 from tf_agents.system import multiprocessing
 import warnings
 warnings.filterwarnings('ignore')
+from tf_agents.environments import ParallelPyEnvironment
 from tf_agents.utils import common
-from tf_agents.policies import policy_saver
+from tf_agents.policies import policy_saver, policy_loader
 from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
+from tf_agents.agents.sac import tanh_normal_projection_network
 
-BATCH_SIZE = 128
-DISCOUNT = 0.75
-TRAIN_TEST_RATIO = 1
+POLICY_LOAD_ID = 9
+
+BATCH_SIZE = 256
+TRAIN_TEST_RATIO = 0.75
 
 num_episodes = 50
 train_sequence_length = 6
+buffer_size = 3000
 
-actor_learning_rate = 4.618152654403827e-05
-critic_learning_rate = 25* actor_learning_rate
-alpha_learning_rate = 7.400528836439677e-05
-cql_alpha_learning_rate = 1e-5
+actor_learning_rate = 4.618152654403827e-05         / 30
+critic_learning_rate = 25* actor_learning_rate      
+alpha_learning_rate = 7.400528836439677e-05         / 30
+cql_alpha_learning_rate = 1e-5                      / 30
 
 cql_alpha= 0.280423024569609
 include_critic_entropy_term=True
@@ -50,9 +60,9 @@ actor_output_fc_layer_params        =(100,)
 actor_activation_fn                 =tf.keras.activations.selu
 
 critic_joint_fc_layer_params=None
-critic_lstm_size=                   (40,)
-critic_output_fc_layer_params           =(100, 100)
-critic_activation_fn=tf.keras.activations.selu
+critic_lstm_size                    = (40,)
+critic_output_fc_layer_params       = (100, 100)
+critic_activation_fn                = tf.keras.activations.selu
 
 
 
@@ -115,9 +125,9 @@ def configure_agent(env):
 
     return agent
 
-
 def create_environment():
-    return Environment(discret=False)
+    return Environment(discret=False, episode_time=999999,
+                       scaler_path=None, c_coef=1, e_coef=0, log_steps=False)
 
 
 def main(argv=None):
@@ -125,70 +135,113 @@ def main(argv=None):
     print("Is GPU build:", tf.test.is_built_with_cuda())
     if argv is None:
         argv = []
-    configure_tensorflow_logging()
 
-    train_env = tf_py_environment.TFPyEnvironment(create_environment())
+    train_env = create_environment()
+    train_py_env = tf_py_environment.TFPyEnvironment(train_env)
+    agent = configure_agent(train_py_env)
 
-    agent = configure_agent(train_env)
-
+    agent.initialize()
+    tf_policy = policy_loader.load(f'./policies/CQL--{POLICY_LOAD_ID}')    
+    agent.policy.update(tf_policy)
+    
     agent.train = common.function(agent.train)
 
-    replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-                        data_spec=agent.collect_data_spec,
-                        batch_size=1,
-                        max_length=20000)
-    train_env.close()
-    del train_env
 
-    print("================================== collecting data ===============================================")
-    test_buffer = []
+    table_name = 'uniform_table'
+    replay_buffer_signature = tensor_spec.from_spec(
+        agent.collect_data_spec)
+    replay_buffer_signature = tensor_spec.add_outer_dim(
+        replay_buffer_signature)
 
-    trajs = get_trajectory_from_csv("./csv_data/trajectory7.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
-    plot_trajs(trajs)
+    table = reverb.Table(
+        table_name,
+        max_size=buffer_size,
+        sampler=reverb.selectors.Uniform(),
+        remover=reverb.selectors.Fifo(),
+        rate_limiter=reverb.rate_limiters.MinSize(1),
+        signature=replay_buffer_signature)
 
-    # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
+    reverb_server = reverb.Server([table])
 
-    # Dataset generates trajectories with shape [Bx2x...]
+    replay_buffer = reverb_replay_buffer.ReverbReplayBuffer(
+                                agent.collect_data_spec,
+                                table_name=table_name,
+                                sequence_length=train_sequence_length,
+                                local_server=reverb_server)
+
+    rb_observer = reverb_utils.ReverbAddTrajectoryObserver(
+                                replay_buffer.py_client,
+                                table_name,
+                                sequence_length=train_sequence_length)
+    
+    # random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
+    #                                             train_env.action_spec())
+    
+
     dataset = replay_buffer.as_dataset(
-        num_parallel_calls=3, 
-        sample_batch_size=BATCH_SIZE, 
-        num_steps=train_sequence_length).prefetch(3)
-
+            num_parallel_calls=3,
+            sample_batch_size=BATCH_SIZE,
+            num_steps=train_sequence_length).prefetch(3)
+    
     iterator = iter(dataset)
 
+    # Create a driver to collect experience.
+    collect_driver = py_driver.PyDriver(
+        train_env,
+        py_tf_eager_policy.PyTFEagerPolicy(
+        agent.collect_policy, use_tf_function=True, batch_time_steps=True),
+        [rb_observer],
+        max_steps=BATCH_SIZE*4)
+    
+    time_step = train_env.reset()
+
+
+
+    policy_state = agent.policy.get_initial_state(batch_size=1)
     print("================================== training ======================================================")
+    configure_tensorflow_logging()
     # Run the training loop
-    steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE * 3
-    losses = np.full(num_episodes*steps_per_episode+1, -1)
+    steps_per_episode = 1
+    losses = []
 
     for episode in tqdm(range(num_episodes)):
+        
         try:
-            for _ in range(steps_per_episode):
+            sum_diff = 0
+            sum_reward = 0
+            for i in range(steps_per_episode):
+                # Collect a few steps and save to the replay buffer.
+                time_step, policy_state = collect_driver.run(time_step, policy_state)
+
                 # Sample a batch of data from the buffer and update the agent's network.
-                experience, unused_info = next(iterator)
+                experience, _ = next(iterator)
                 train_loss = agent.train(experience).loss
+
                 step = agent.train_step_counter.numpy()
-                losses[step] = train_loss
-            tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
-            # if episode % 5 == 0:
-            #     tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
+                losses.append(train_loss)
 
+                sum_diff += np.sum(np.abs(experience.observation[:, 1]))/np.sum(experience.observation[:, 1].shape)
+                sum_reward += np.sum(np.abs(experience.reward))/np.sum(experience.reward.shape)
+                tqdm.write('step = {0}: loss = {1}, env time = {2}'.format(step, train_loss, train_env.time))
 
+            tqdm.write('episode = {0}: sum difference = {1}'.format(episode, sum_diff))
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/CQL{episode}', exist_ok=True)
-            saver.save(f'./policies/CQL{episode}')
+            os.makedirs(f'./policies/CQL_online{episode}', exist_ok=True)
+            saver.save(f'./policies/CQL_online{episode}')
+
+            if train_env.time > 120*60:
+                break 
         except KeyboardInterrupt:
             break
             print("next")
 
-    plot_loss(losses, num_episodes)
+
+    # plot_loss(losses, num_episodes)
     saver = policy_saver.PolicySaver(agent.policy)
     saver.save('./policies/CQL')
     print("done")
 
 
-
 if __name__ == '__main__':
     multiprocessing.handle_main(functools.partial(main))
+    

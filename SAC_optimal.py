@@ -30,7 +30,6 @@ from tf_agents.agents.sac import tanh_normal_projection_network
 from tf_agents.trajectories import Trajectory
 
 TRAIN_TEST_RATIO = 0.75
-num_steps_dataset = 2
 TRAINING_STEPS = 20
 
 def evaluate_policy2(agent):
@@ -86,7 +85,7 @@ def evaluate_policy(agent_original, num_test_steps=1000):
 
 def training_agent(agent, train_iterator, num_episodes):
     steps_per_episode = 110
-    max_rating = np.inf
+    max_rating = -np.inf
     max_rating_ep = -1
 
     for episode in range(num_episodes):
@@ -96,8 +95,8 @@ def training_agent(agent, train_iterator, num_episodes):
 
 
         if episode in [14, 19]:
-            rating = evaluate_policy(agent)
-            if rating < max_rating:
+            rating = evaluate_policy2(agent)
+            if rating > max_rating:
                 max_rating = rating
                 max_rating_ep = episode
      
@@ -111,6 +110,7 @@ def objective(trial):
     # num_of_layers = trial.suggest_int('num_of_layers', 2, 8)
         batch_size_pow = trial.suggest_int('batch_size 2^', 3, 9)
         batch_size = 2**batch_size_pow
+        num_steps_dataset = trial.suggest_int('num_steps_dataset', 2, 20)
 
         # net structure
         num_actor_fc_input = trial.suggest_int('num_actor_fc_input', 0, 2)
@@ -335,7 +335,7 @@ def main(argv=None):
         sys.stdout = f
 
         try:
-            study = optuna.create_study(direction='minimize')
+            study = optuna.create_study(direction='maximize')
             study.optimize(objective, n_trials=100, catch=(ValueError,), n_jobs=1)
         except KeyboardInterrupt:
             pass   

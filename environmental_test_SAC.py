@@ -8,7 +8,7 @@ import os
 import psutil
 from tf_agents.trajectories import time_step as ts
 from tqdm import tqdm
-from utils import abnormalize_state, discretize, undiscretize, configure_tensorflow_logging
+from utils import abnormalize_state, discretize, undiscretize
 
 def log_memory_usage():
     process = psutil.Process(os.getpid())
@@ -16,11 +16,10 @@ def log_memory_usage():
     print(f'\n\n\n\n Memory usage: {memory_use:.2f} MB')
 
 def create_environment():
-    return Environment(discret=True, episode_time=120, seed=9171518)
+    return Environment(discret=False, episode_time=120, seed=9171518)
 
 
 def main():
-    configure_tensorflow_logging()
     log_memory_usage()
 
     env = tf_py_environment.TFPyEnvironment(create_environment())
@@ -33,12 +32,12 @@ def main():
     controls = []
     times = []
     
+    
     log_memory_usage()
-
-    for i in tqdm(range(30, 35, 95)):
+    for i in tqdm(range(3, 50, 910)):
         sum_diff = 0
         try:
-            policy_path = (f'./policies/DQN_online{i}')
+            policy_path = (f'./policies/SAC2_online{i}')
             loaded_policy = tf.saved_model.load(policy_path)
             policy_state = loaded_policy.get_initial_state(batch_size=1)
             time_step = env.reset()
@@ -49,15 +48,19 @@ def main():
                     observation= tf.reshape(time_step.observation, (1, 2))
                     )
             while not time_step.is_last():
-                action_step = loaded_policy.action(time_step, policy_state)
-                policy_state = action_step.state
-                time_step2 = env.step(action_step.action)
-
+                dist = loaded_policy.distribution(time_step, policy_state)
+                policy_state = dist.state
+                time_step2 = env.step(float(dist.action.loc))
+                # action_step = loaded_policy.action(time_step, policy_state)
+                # policy_state = action_step.state
+                # time_step2 = env.step(action_step.action)
                 time_step = ts.TimeStep(
                         step_type=tf.reshape(time_step2.step_type, (1, )),
                         reward=tf.reshape(time_step2.reward, (1, )),
                         discount=time_step2.discount,
                         observation= tf.reshape(time_step2.observation, (1, 2))
+
+                        # observation= tf.constant(np.array([to0, to1]), shape=(1, 2))
                         )
 
                 state, reward, done, info = time_step2.observation, time_step.reward, time_step.step_type, 0
@@ -67,11 +70,13 @@ def main():
                 real_state = abnormalize_state(state)
                 T.append(real_state[:, 0])
                 T_sp.append(real_state[:, 1])
-                controls.append(float(action_step.action))
+                controls.append(float(dist.action.loc))
+                # controls.append(float(action_step.action))
                 times.append(env.envs[0].time)
-                # if sum_diff > 10000:
-                #     tqdm.write(f"time: {env.envs[0].time}")
-                #     break                
+                if sum_diff > 10000:
+                    tqdm.write(f"time: {env.envs[0].time}")
+                    break
+                    
 
             tqdm.write(str([policy_path, float(sum_diff)]))
         except KeyboardInterrupt:
@@ -130,7 +135,7 @@ def main():
     plt.title('Sterowanie')
     plt.savefig('plot/controls.png')
 
-    pd.DataFrame({"time":times, "T": T, "T_diff": T_sp, "rewards":rewards, "controls":controls}).to_csv("./csv_data/test_policy.csv")
+    pd.DataFrame({"time":times, "T": T, "T_sp": T_sp, "rewards":rewards, "controls":controls}).to_csv("./csv_data/test_policy.csv")
 
 
 

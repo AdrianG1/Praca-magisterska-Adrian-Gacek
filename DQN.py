@@ -1,5 +1,5 @@
 from environmentv3 import Environment
-from utils import CustomReplayBuffer, discretize, plot_trajs, plot_loss
+from utils import CustomReplayBuffer, discretize, plot_trajs, plot_loss, configure_tensorflow_logging
 import tensorflow as tf
 import numpy as np
 from tf_agents.agents.dqn import dqn_agent
@@ -14,18 +14,19 @@ import warnings
 warnings.filterwarnings('ignore')
 from tf_agents.environments import ParallelPyEnvironment, wrappers
 from tf_agents.utils import common
-from tf_agents.policies import policy_saver
+from tf_agents.policies import policy_saver, policy_loader
 from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
 from tf_agents.specs import array_spec
 import os
+from tqdm import tqdm
 
-BATCH_SIZE = 32
+BATCH_SIZE = 256
 DISCOUNT = 0.75
-TRAIN_TEST_RATIO = 0.75
-NUM_ACTIONS = 6
+TRAIN_TEST_RATIO = 1
+NUM_ACTIONS = 5
 
-learning_rate             = 0.0006653782419255851
+learning_rate             = 0.0006653782419255851/2
 
 input_fc_layer_params     = (209, 148)
 lstm_size                 = (77,)
@@ -90,8 +91,8 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer):
 
         state = record.iloc[:state_dim].values  # Convert to numpy array
         action = record["Akcje"]
-        reward = record["Nagrody"]
         discrete_action = tf.expand_dims(discretize(action, num_actions=NUM_ACTIONS), axis=-1)
+        reward = record["Nagrody"] - action/(state[0]/100)/3.5/3
 
         traj = Trajectory(tf.constant(1, dtype=tf.int32, shape=(1,)), 
                         tf.expand_dims(tf.constant(state, dtype=tf.float32), axis=0),
@@ -100,8 +101,9 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer):
                         tf.constant(1, dtype=tf.int32, shape=(1,)),
                         tf.constant(reward, dtype=tf.float32, shape=(1,)), 
                         tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
-        replay_buffer.append(traj)
+        # replay_buffer.append(traj)
         trajs.append(traj)
+        replay_buffer.add_batch(traj)
 
         if  idx > train_end:
             break
@@ -113,43 +115,58 @@ def main(argv=None):
     print("Is GPU build:", tf.test.is_built_with_cuda())
     if argv is None:
         argv = []
+    configure_tensorflow_logging()
 
     env = ParallelPyEnvironment([create_environment] * 1)
     train_env = tf_py_environment.TFPyEnvironment(env)
     agent = configure_agent(train_env)
-    del train_env, env
     agent.initialize()
     # (Optional) Reset the agent's policy state
     agent.train = common.function(agent.train)
 
-    replay_buffer = CustomReplayBuffer(num_steps=12)
+    # replay_buffer = CustomReplayBuffer(num_steps=train_sequence_length)
+
+    replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
+                        data_spec=agent.collect_data_spec,
+                        batch_size=train_env.batch_size,
+                        max_length=20000)
+    del train_env, env
 
     print("================================== collecting data ===============================================")
-    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer)
+    trajs = get_trajectory_from_csv("./csv_data/trajectory7.csv", 2, replay_buffer)
     plot_trajs(trajs)
-
     # Dataset generates trajectories with shape [Bx2x...]
-    iterator = replay_buffer.get_iterator()
+    # iterator = replay_buffer.get_iterator()
+    dataset = replay_buffer.as_dataset(
+        num_parallel_calls=3, 
+        sample_batch_size=BATCH_SIZE, 
+        num_steps=train_sequence_length).prefetch(3)
+
+    iterator = iter(dataset)
 
     print("================================== training ======================================================")
     # Run the training loop
-    num_episodes = 25
-    steps_per_episode = int(len(replay_buffer)) // BATCH_SIZE
-    losses = []
+    num_episodes = 5
+    # steps_per_episode = int(len(replay_buffer)) // BATCH_SIZE *2
+    steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE*4
 
-    for episode in range(num_episodes):
+    losses = []
+    agent.policy.update(policy_loader.load("./policies/DQN_2_32"))
+
+    for episode in tqdm(range(num_episodes)):
         try:
             for _ in range(steps_per_episode):
                 # Sample a batch of data from the buffer and update the agent's network.
-                experience = next(iterator)
+                experience, info = next(iterator)
                 train_loss = agent.train(experience).loss
                 step = agent.train_step_counter.numpy()
                 losses.append(train_loss)
             tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
 
-            saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/DQN{episode}', exist_ok=True)
-            saver.save(f'./policies/DQN{episode}')
+            policy2 = agent.post_process_policy()
+            saver = policy_saver.PolicySaver(policy2)
+            os.makedirs(f'./policies/DQN__{episode}', exist_ok=True)
+            saver.save(f'./policies/DQN__{episode}')
         except KeyboardInterrupt:
             break
 

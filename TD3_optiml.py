@@ -103,7 +103,7 @@ def evaluate_policy(agent_original, num_test_steps=1000):
 
 def training_agent(agent, train_iterator, num_episodes):
     steps_per_episode = 110
-    max_rating = np.inf
+    max_rating = -np.inf
     max_rating_ep = -1
 
     for episode in range(num_episodes):
@@ -113,8 +113,8 @@ def training_agent(agent, train_iterator, num_episodes):
 
 
         if episode in [4, 9 , 14]:
-            rating = evaluate_policy(agent)
-            if rating < max_rating:
+            rating = evaluate_policy2(agent)
+            if rating > max_rating:
                 max_rating = rating
                 max_rating_ep = episode
      
@@ -380,7 +380,7 @@ def main(argv=None):
         sys.stdout = f
 
         try:
-            study = optuna.create_study(direction='minimize')
+            study = optuna.create_study(direction='maximize')
             study.optimize(objective, n_trials=100, catch=(ValueError,), n_jobs=1)
         except KeyboardInterrupt:
             pass   

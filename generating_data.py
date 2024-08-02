@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 import matplotlib.pyplot as plt
+import pickle
 
 def plot_pd_trajs(trajectory):
     """ Plot kontrolny wczytywanej trajektorii"""
@@ -43,6 +44,7 @@ def collect_data(env, control_function):
     states = []
     rewards = []
     actions = []
+    times = []
 
     episode_running_flag = True
     while episode_running_flag:
@@ -50,9 +52,10 @@ def collect_data(env, control_function):
         states.append(time_step.observation)
         rewards.append(next_time_step.reward)
         actions.append(action)
+        times.append(env.time)
         episode_running_flag = not next_time_step.is_last() 
 
-    return states, rewards, actions
+    return states, rewards, actions, times
 
 def analyze_data(data):
     print(data.head(5))
@@ -62,21 +65,22 @@ def analyze_data(data):
 
 
 def main(argv=None):
-
     # Inicjalizacja środowiska i regulatora
-    env = Environment(discret=False, episode_time=180, seed=2137)
+    env = Environment(discret=False, episode_time=300, seed=2137, e_coef=1)
     env.reset()
     pid = PID()
 
     # Zbieranie danych
-    states, rewards, actions = collect_data(env, pid.control)
+    states, rewards, actions, times = collect_data(env, pid.control)
     del env
 
     # Konwersja na DataFrame
     states = pd.DataFrame(states, columns=["T_sp", "T_błąd"])
     rewards = pd.DataFrame(rewards, columns=["Nagrody"])
     actions = pd.DataFrame(actions, columns=["Akcje"])
-
+    times = pd.DataFrame(times, columns=["Czas"])
+    # states["T_sp"] = (states["T_sp"]-30) /40
+    # states["T_błąd"] = (states["T_błąd"]+50) /100
     # Rozszerzenie przestrzeni stanu
     #states["T_błąd"] = states["T_zadana"] - states["T"]
 
@@ -87,7 +91,7 @@ def main(argv=None):
     #states = states.drop(["T_zadana"], axis=1)
     # rewards["Nagrody"] = states["T_błąd"].abs()
 
-    trajectory = pd.concat((states, rewards, actions), axis=1)
+    trajectory = pd.concat((states, rewards, actions, times), axis=1)
 
     print("\n Trajektoria \n")
     analyze_data(trajectory) 
@@ -99,11 +103,15 @@ def main(argv=None):
     scaler = StandardScaler()
     trajectory[['Nagrody']] = scaler.fit_transform(trajectory[['Nagrody']])
 
+    # zapis scalera nagród
+    with open('scaler.pkl', 'wb') as file:
+        pickle.dump(scaler, file)
+
     print(" Oczyszczona, znormalizowana trajektoria")
     analyze_data(trajectory) 
 
     plot_pd_trajs(trajectory)
-    trajectory.to_csv("./csv_data/trajectory.csv")
+    trajectory.to_csv("./csv_data/trajectory8.csv")
 
 
 if __name__ == '__main__':

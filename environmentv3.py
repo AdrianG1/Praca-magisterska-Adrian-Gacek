@@ -63,13 +63,15 @@ class Environment(py_environment.PyEnvironment):
     SPEEDUP = 100
 
     def __init__(self, discret=False, episode_time=60, seed=123141, 
-                 num_actions=5, scaler_path=None, c_coef=1, e_coef=0.1):
+                 num_actions=5, scaler_path=None, c_coef=1, e_coef=0, log_steps=False, env_step_time=1):
         
         # parametry symulacji
         self.discret = discret                  # True jeśli akcje są dyskretne
         self.num_of_actions = num_actions       # określa liczbę akcji
         self.episode_time = episode_time * 60   # czas trwania eksperymentu
         self._seed = seed 
+        self.log_step = log_steps
+        self.env_step_time = env_step_time
 
         self.c_coef = c_coef                    # współczynniki do wyznaczania ...  
         self.e_coef = e_coef                    # nagrody
@@ -98,6 +100,11 @@ class Environment(py_environment.PyEnvironment):
                 self.__normalize_reward = lambda x: float(self._scaler.transform([[x]]))
         else:
             raise TypeError("scaler_path should be str or None")
+        
+        # inicjalizacja pliku logów
+        if self.log_step:
+            with open('environment.log', 'w') as file:
+                file.writelines([f"T_sp,T_błąd,Nagrody,Akcje\n"])
 
 
     def __del__(self):
@@ -135,18 +142,17 @@ class Environment(py_environment.PyEnvironment):
 
         with open(os.devnull, 'w') as f:
             with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-
                 # zamyka poprzednie laboratorium jeśli istnieje
                 try:    
                     self.lab.close()
                 except AttributeError:
                     pass
 
-                # Otwieram nowe laboratorium z nowym zegarem i generatorem nastaw
-                lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
-                self.lab = lab()
-                self.clk = tclab.clock(self.episode_time)
-                self._T_gen = setpoint_gen(self.clk, self._seed)
+        # Otwieram nowe laboratorium z nowym zegarem i generatorem nastaw
+        lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
+        self.lab = lab()
+        self.clk = tclab.clock(self.episode_time, step=self.env_step_time)
+        self._T_gen = setpoint_gen(self.clk, self._seed)
 
         self.__set_control(0)
         self.__state_update()
@@ -172,9 +178,16 @@ class Environment(py_environment.PyEnvironment):
         current_reward = np.array(self.reward, dtype=np.float32)
         current_state = self.state.as_array()
         if self.done:
-            self._current_time_step = ts.termination(current_state, current_reward)
+            self._current_time_step = ts.termination(current_state, 
+                                                     current_reward)
         else:
-            self._current_time_step = ts.transition(current_state, current_reward)
+            self._current_time_step = ts.transition(current_state, 
+                                                    current_reward)
+
+        if self.log_step:
+            with open('environment.log', 'a') as file:
+                file.writelines([f"{self.state.T_sp},{self.state.T_diff},{current_reward},{action}\n"])
+
         return self._current_time_step
 
     def __calculate_reward(self, action):

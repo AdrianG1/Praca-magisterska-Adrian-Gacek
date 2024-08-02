@@ -31,13 +31,13 @@ from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
-POLICY_LOAD_ID = 12
+POLICY_LOAD_ID = 21
 
-BATCH_SIZE = 4
+BATCH_SIZE = 256
 TRAIN_TEST_RATIO = 0.75
 
-actor_learning_rate             =1.863793015696307e-04
-critic_learning_rate            = actor_learning_rate *156.48294088634958
+actor_learning_rate             = 0.0006653782419255851/50
+critic_learning_rate            = actor_learning_rate * 8.172990023254641
 
 actor_input_fc_layer_params     = (209, 148)
 actor_lstm_size                 = (77,)
@@ -45,17 +45,17 @@ actor_output_fc_layer_params    = (216, 100)
 
 critic_joint_fc_layer_params    = None
 critic_lstm_size                = (124,)
-critic_output_fc_layer_params   = (96, 100)
+critic_output_fc_layer_params   = (96,100)
 
-exploration_noise_std           = 0.1282693
-target_update_tau               = 0.0044578903484011854
+exploration_noise_std           = 0.22507554579935002
+target_update_tau               = 0.011791682151010022
 actor_update_period             = 5
-gamma                           = 0.91626
-reward_scale_factor             = 1.3973179008462675
+gamma                           =  0.962232033742456
+reward_scale_factor             = 0.9874855517385459
 
-activation_fn                   = tf.keras.activations.elu
-e_coef                          = 62
-buffer_size                     = 28
+activation_fn                   = tf.keras.activations.relu
+e_coef                          = 0
+buffer_size                     = 2000
 
 train_sequence_length = 4
 num_episodes = 50
@@ -114,7 +114,8 @@ def configure_agent(env):
 
 
 def create_environment():
-    return Environment(discret=False, episode_time=999999, seed=3214152, scaler_path=None, c_coef=1, e_coef=e_coef)
+    return Environment(discret=False, episode_time=999999, 
+                       scaler_path=None, c_coef=1, e_coef=e_coef)
 
 
 def main(argv=None):
@@ -128,8 +129,9 @@ def main(argv=None):
     agent = configure_agent(train_py_env)
 
     agent.initialize()
-    tf_policy = policy_loader.load(f'./policies/t3d3{POLICY_LOAD_ID}')    
+    tf_policy = policy_loader.load(f'./policies/t1d3{POLICY_LOAD_ID}')    
     agent.policy.update(tf_policy)
+    agent.post_process_policy()
 
     # (Optional) Reset the agent's policy state
     agent.train = common.function(agent.train)
@@ -179,7 +181,7 @@ def main(argv=None):
         py_tf_eager_policy.PyTFEagerPolicy(
         agent.collect_policy, use_tf_function=True, batch_time_steps=True),
         [rb_observer],
-        max_steps=BATCH_SIZE)
+        max_steps=BATCH_SIZE*10)
     
     time_step = train_env.reset()
 
@@ -189,7 +191,7 @@ def main(argv=None):
     print("================================== training ======================================================")
     configure_tensorflow_logging()
     # Run the training loop
-    steps_per_episode = 10
+    steps_per_episode = 1
     losses = []
 
     for episode in tqdm(range(num_episodes)):

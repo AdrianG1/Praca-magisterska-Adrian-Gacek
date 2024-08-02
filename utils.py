@@ -220,6 +220,35 @@ class CustomReplayBuffer(UserList):
 
                 yield traj #Trajectory()
 
+    def equal_actions(self):
+        print(len(self.data))
+        a = {}
+        for traj in self.data:
+            if int(traj.action) not in a.keys():
+                a[int(traj.action)] = 1
+            else:
+                a[int(traj.action)] += 1
+        print(a)
+        min_a = min(a.items())[1]
+        print(min_a)
+        for key in a:
+            a[key] = min_a
+        print(a)
+
+        random_order_trajs = list(enumerate(self.data))
+        import random
+        random.shuffle(random_order_trajs)
+
+        for i, traj in reversed(list(enumerate(random_order_trajs))):
+            if a[int(traj[1].action)] <= 0:
+                random_order_trajs.pop(i)
+            else:
+                a[int(traj[1].action)] -= 1  
+        random_order_trajs.sort(key=lambda x: x[0])
+        self.data = [random_order_traj[1] for random_order_traj in random_order_trajs]
+        print(len(self.data))
+
+
 
 
 def configure_tensorflow_logging():

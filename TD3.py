@@ -2,6 +2,7 @@ import tensorflow as tf
 from environmentv3 import Environment
 import os
 from utils import plot_loss, plot_trajs, get_trajectory_from_csv, configure_tensorflow_logging
+
 from tf_agents.agents.ddpg.actor_rnn_network import ActorRnnNetwork
 from tf_agents.agents.ddpg import critic_rnn_network
 
@@ -23,10 +24,32 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
 
-BATCH_SIZE = 64
-TRAIN_TEST_RATIO = 0.75
+BATCH_SIZE = 16
+TRAIN_TEST_RATIO = 1
 
-actor_learning_rate             = 0.0006653782419255851
+# actor_learning_rate             = 0.00002248874552946738
+# critic_learning_rate            = actor_learning_rate * 21.0116355512788
+
+# actor_input_fc_layer_params     = (204, 81)
+# actor_lstm_size                 = (92,)
+# actor_output_fc_layer_params    = (216, 100)
+
+# critic_joint_fc_layer_params    = (127, 139)
+# critic_lstm_size                = (41,)
+# critic_output_fc_layer_params   = (100,)
+
+# exploration_noise_std           = 0.20367376890453143
+# target_update_tau               = 0.011791682151010022
+# actor_update_period             = 2
+# gamma                           = 0.9842972685669078
+# reward_scale_factor             = 0.12738151573420237
+
+# activation_fn                   = tf.keras.activations.relu
+
+# train_sequence_length = 12
+# num_episodes = 25
+
+actor_learning_rate             = 0.0006653782419255851 / 5
 critic_learning_rate            = actor_learning_rate * 8.172990023254641
 
 actor_input_fc_layer_params     = (209, 148)
@@ -35,19 +58,18 @@ actor_output_fc_layer_params    = (216, 100)
 
 critic_joint_fc_layer_params    = None
 critic_lstm_size                = (124,)
-critic_output_fc_layer_params   = (96, 100)
+critic_output_fc_layer_params   = (96,100)
 
-exploration_noise_std           = 0.12507554579935002
-target_update_tau               = 0.005041497519914242
-actor_update_period             = 2
-gamma                           = 0.962232033742456 
-reward_scale_factor             = 0.9874855517385459 
+exploration_noise_std           = 0.22507554579935002
+target_update_tau               = 0.011791682151010022
+actor_update_period             = 5
+gamma                           =  0.962232033742456
+reward_scale_factor             = 0.5874855517385459
 
 activation_fn                   = tf.keras.activations.relu
-
+# Train /test!!!!!!!!!!!!!!1111
 train_sequence_length = 4
-num_episodes = 25
-
+num_episodes = 35
 
 def configure_agent(env):
 
@@ -123,12 +145,12 @@ def main(argv=None):
     replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
                         data_spec=agent.collect_data_spec,
                         batch_size=train_env.batch_size,
-                        max_length=10000)
+                        max_length=20000)
     env.close()
     del train_env, env
 
     print("================================== collecting data ===============================================")
-    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, [], TRAIN_TEST_RATIO, discount=0)
+    trajs = get_trajectory_from_csv("./csv_data/trajectory7.csv", 2, replay_buffer, [], TRAIN_TEST_RATIO, discount=0)
     plot_trajs(trajs)
 
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)

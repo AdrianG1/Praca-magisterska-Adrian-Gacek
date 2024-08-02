@@ -27,29 +27,30 @@ from tf_agents.agents.sac import tanh_normal_projection_network
 BATCH_SIZE = 64
 TRAIN_TEST_RATIO = 0.75
 
-actor_learning_rate             = 0.00006653782419255851
-critic_learning_rate            = actor_learning_rate * 8.172990023254641
-alpha_learning_rate             = 0.00006653782419255851
+actor_learning_rate             = 9.401499111738006e-04 / 5
+critic_learning_rate            = actor_learning_rate * 9.523080854631749 * 5
+alpha_learning_rate             = 8.850215277629775e-05
 
 
-actor_input_fc_layer_params     = (209, 148)
-actor_lstm_size                 = (77,)
-actor_output_fc_layer_params    = (216, 100)
+actor_input_fc_layer_params     = (195,)
+actor_lstm_size                 = (101,)
+actor_output_fc_layer_params    = (100,)
 
 critic_joint_fc_layer_params    = None
-critic_lstm_size                = (124,)
-critic_output_fc_layer_params   = (96, 100)
+critic_lstm_size                = (35,)
+critic_output_fc_layer_params   = (105, 100)
 
-target_update_tau               = 0.005041497519914242*2
+target_update_tau               = 0.031101832198767103
 target_update_period            = 1
-actor_update_period             = 2
-gamma                           = 0.962232033742456 
-reward_scale_factor             = 0.9874855517385459 
+actor_update_period             = 3
+gamma                           = 0.9674273939790276
+reward_scale_factor             = 0.23014718662243797
 
 activation_fn                   = tf.keras.activations.relu
 
-train_sequence_length = 12
-num_episodes = 25
+train_sequence_length           = 12
+num_episodes                    = 10
+
 
 def configure_agent(env):
 
@@ -94,9 +95,11 @@ def configure_agent(env):
                 target_update_tau=target_update_tau,
                 target_update_period=target_update_period,
                 td_errors_loss_fn=tf.math.squared_difference,
+                actor_loss_weight=3,
                 gamma=gamma,
                 reward_scale_factor=reward_scale_factor,
                 initial_log_alpha=0.5,
+
                 train_step_counter=tf.Variable(0))
 
         agent.initialize()
@@ -132,7 +135,7 @@ def main(argv=None):
     print("================================== collecting data ===============================================")
     test_buffer = []
 
-    trajs = get_trajectory_from_csv("./csv_data/trajectory.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
+    trajs = get_trajectory_from_csv("./csv_data/trajectory8.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
     plot_trajs(trajs)
 
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
@@ -162,10 +165,9 @@ def main(argv=None):
                 step = agent.train_step_counter.numpy()
                 losses[step] = train_loss
             tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
-            if episode % 5 == 4:
-                tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
-
-
+            # if episode % 5 == 4:
+            #     tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
+            
             saver = policy_saver.PolicySaver(agent.policy)
             os.makedirs(f'./policies/SAC{episode}', exist_ok=True)
             saver.save(f'./policies/SAC{episode}')
