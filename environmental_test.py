@@ -1,4 +1,5 @@
-from environmentv3 import Environment
+# from environmentv3 import Environment
+from environmentv3_transmission import Environment
 import tensorflow as tf
 from tf_agents.environments import tf_py_environment
 import matplotlib.pyplot as plt
@@ -8,7 +9,7 @@ import os
 import psutil
 from tf_agents.trajectories import time_step as ts
 from tqdm import tqdm
-from utils import abnormalize_state, discretize, undiscretize, configure_tensorflow_logging
+from utils import abnormalize_state, configure_tensorflow_logging
 
 def log_memory_usage():
     process = psutil.Process(os.getpid())
@@ -16,7 +17,7 @@ def log_memory_usage():
     print(f'\n\n\n\n Memory usage: {memory_use:.2f} MB')
 
 def create_environment():
-    return Environment(discret=True, episode_time=120, seed=9171518)
+    return Environment(discret=True, episode_time=120, seed=9171518, connected=True, env_step_time=1)
 
 
 def main():
@@ -35,10 +36,10 @@ def main():
     
     log_memory_usage()
 
-    for i in tqdm(range(30, 35, 95)):
+    for i in tqdm(range(4, 35, 95)):
         sum_diff = 0
         try:
-            policy_path = (f'./policies/DQN_online{i}')
+            policy_path = (f'./policies/DQN_real_online{i}')
             loaded_policy = tf.saved_model.load(policy_path)
             policy_state = loaded_policy.get_initial_state(batch_size=1)
             time_step = env.reset()
@@ -69,6 +70,12 @@ def main():
                 T_sp.append(real_state[:, 1])
                 controls.append(float(action_step.action))
                 times.append(env.envs[0].time)
+
+                if len(times) % 40 == 0:
+                    tqdm.write(f"time: {env.envs[0].time}, T: {real_state[:, 0]}, , T_sp: {real_state[:, 1]} \
+                    T2: {env.envs[0].lab.T2}, Q1: {env.envs[0].lab.Q1()}, Q2: {env.envs[0].lab.Q2()}")
+                
+                
                 # if sum_diff > 10000:
                 #     tqdm.write(f"time: {env.envs[0].time}")
                 #     break                
@@ -130,7 +137,7 @@ def main():
     plt.title('Sterowanie')
     plt.savefig('plot/controls.png')
 
-    pd.DataFrame({"time":times, "T": T, "T_diff": T_sp, "rewards":rewards, "controls":controls}).to_csv("./csv_data/test_policy.csv")
+    pd.DataFrame({"time":times, "T": T, "T_diff": T_sp, "rewards":rewards, "controls":controls}).to_csv("./csv_data/test_policy_DQN.csv")
 
 
 

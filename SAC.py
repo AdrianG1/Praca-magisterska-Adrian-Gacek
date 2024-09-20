@@ -24,11 +24,12 @@ from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
-BATCH_SIZE = 64
-TRAIN_TEST_RATIO = 0.75
 
-actor_learning_rate             = 9.401499111738006e-04 / 5
-critic_learning_rate            = actor_learning_rate * 9.523080854631749 * 5
+BATCH_SIZE = 64
+TRAIN_TEST_RATIO = 1
+
+actor_learning_rate             = 1,88e-4
+critic_learning_rate            = actor_learning_rate * 47.615404273158745
 alpha_learning_rate             = 8.850215277629775e-05
 
 
@@ -49,7 +50,7 @@ reward_scale_factor             = 0.23014718662243797
 activation_fn                   = tf.keras.activations.relu
 
 train_sequence_length           = 12
-num_episodes                    = 10
+num_episodes                    = 25
 
 
 def configure_agent(env):
@@ -135,7 +136,7 @@ def main(argv=None):
     print("================================== collecting data ===============================================")
     test_buffer = []
 
-    trajs = get_trajectory_from_csv("./csv_data/trajectory8.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
+    trajs = get_trajectory_from_csv("./csv_data/trajectory_real.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
     plot_trajs(trajs)
 
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
@@ -169,8 +170,8 @@ def main(argv=None):
             #     tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
             
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/SAC{episode}', exist_ok=True)
-            saver.save(f'./policies/SAC{episode}')
+            os.makedirs(f'./policies/SAC_{episode}', exist_ok=True)
+            saver.save(f'./policies/SAC_{episode}')
         except KeyboardInterrupt:
             break
             print("next")

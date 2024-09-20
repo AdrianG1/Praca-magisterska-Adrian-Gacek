@@ -23,10 +23,10 @@ from tqdm import tqdm
 
 BATCH_SIZE = 256
 DISCOUNT = 0.75
-TRAIN_TEST_RATIO = 1
+TRAIN_TEST_RATIO = 0.5
 NUM_ACTIONS = 5
 
-learning_rate             = 0.0006653782419255851/2
+learning_rate             = 0.00033268912096279257
 
 input_fc_layer_params     = (209, 148)
 lstm_size                 = (77,)
@@ -34,7 +34,6 @@ output_fc_layer_params    = (216, 100)
 
 
 target_update_tau               = 0.005041497519914242
-actor_update_period             = 2
 target_update_period            = 1
 epsilon_greedy                  = 0.1
 gamma                           = 0.962232033742456 
@@ -133,7 +132,7 @@ def main(argv=None):
     del train_env, env
 
     print("================================== collecting data ===============================================")
-    trajs = get_trajectory_from_csv("./csv_data/trajectory7.csv", 2, replay_buffer)
+    trajs = get_trajectory_from_csv("./csv_data/trajectory_real.csv", 2, replay_buffer)
     plot_trajs(trajs)
     # Dataset generates trajectories with shape [Bx2x...]
     # iterator = replay_buffer.get_iterator()
@@ -146,12 +145,10 @@ def main(argv=None):
 
     print("================================== training ======================================================")
     # Run the training loop
-    num_episodes = 5
-    # steps_per_episode = int(len(replay_buffer)) // BATCH_SIZE *2
+    num_episodes = 25
     steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE*4
 
     losses = []
-    agent.policy.update(policy_loader.load("./policies/DQN_2_32"))
 
     for episode in tqdm(range(num_episodes)):
         try:
@@ -173,8 +170,6 @@ def main(argv=None):
     plot_loss(losses, num_episodes)
     saver = policy_saver.PolicySaver(agent.policy)
     saver.save('./policies/DQN')
-    # env.close()
-    # eval_py_env.close()
     print("done")
 
 

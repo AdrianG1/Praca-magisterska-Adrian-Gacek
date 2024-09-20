@@ -1,7 +1,9 @@
 import tensorflow as tf
 from environmentv3 import Environment
+# from environmentv3_transmission import Environment
+
 import os
-from utils import plot_loss, plot_trajs, configure_tensorflow_logging 
+from utils import plot_loss, configure_tensorflow_logging 
 from tf_agents.policies import py_tf_eager_policy
 
 from tf_agents.drivers import py_driver
@@ -16,19 +18,15 @@ import numpy as np
 from tf_agents.environments import tf_py_environment
 from tf_agents.replay_buffers import reverb_replay_buffer
 from tf_agents.replay_buffers import reverb_utils
-from tf_agents.replay_buffers import tf_uniform_replay_buffer
 import multiprocessing
 import functools
 from tf_agents.system import multiprocessing
 import warnings
 warnings.filterwarnings('ignore')
-from tf_agents.environments import ParallelPyEnvironment
 from tf_agents.utils import common
 from tf_agents.policies import policy_saver, policy_loader
 from tqdm import tqdm
-from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
-from tf_agents.agents.sac import tanh_normal_projection_network
 
 POLICY_LOAD_ID = 8
 
@@ -37,9 +35,9 @@ TRAIN_TEST_RATIO = 0.75
 
 num_episodes = 60
 train_sequence_length = 4
-actor_learning_rate             = 9.401499111738006e-04 / 5 / 30
-critic_learning_rate            = actor_learning_rate * 9.523080854631749 * 5
-alpha_learning_rate             = 8.850215277629775e-05 / 30
+actor_learning_rate             = 3.76e-05
+critic_learning_rate            = actor_learning_rate * 47.6063829787234
+alpha_learning_rate             = 2.95e-06
 
 
 actor_input_fc_layer_params     = (195,)
@@ -116,8 +114,8 @@ def configure_agent(env):
 
 
 def create_environment():
-    return Environment(discret=False, episode_time=999999,
-                       scaler_path=None, c_coef=1, e_coef=e_coef, log_steps=False)
+    return Environment(discret=False, episode_time=999999, connected=True, env_step_time=1,
+                       scaler_path=None, c_coef=1, e_coef=e_coef, log_steps=False, seed=64547778)
 
 
 def main(argv=None):
@@ -182,7 +180,7 @@ def main(argv=None):
         py_tf_eager_policy.PyTFEagerPolicy(
         agent.collect_policy, use_tf_function=True, batch_time_steps=True),
         [rb_observer],
-        max_steps=BATCH_SIZE*4)
+        max_steps=BATCH_SIZE)
     
     time_step = train_env.reset()
 
@@ -194,7 +192,7 @@ def main(argv=None):
     # Run the training loop
     steps_per_episode = 1
     losses = []
-
+    max_U = 0
     for episode in tqdm(range(num_episodes)):
         try:
             sum_diff = 0
@@ -216,8 +214,8 @@ def main(argv=None):
 
             tqdm.write('episode = {0}: sum difference = {1}'.format(episode, sum_diff))
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/SAC2_online{episode}', exist_ok=True)
-            saver.save(f'./policies/SAC2_online{episode}')
+            os.makedirs(f'./policies/SAC_online{episode}', exist_ok=True)
+            saver.save(f'./policies/SAC_online{episode}')
         except KeyboardInterrupt:
             break
             print("next")

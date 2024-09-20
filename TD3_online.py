@@ -1,5 +1,6 @@
 import tensorflow as tf
-from environmentv3 import Environment
+# from environmentv3 import Environment
+from environmentv3_transmission import Environment
 import os
 from utils import plot_loss, configure_tensorflow_logging
 
@@ -36,8 +37,8 @@ POLICY_LOAD_ID = 21
 BATCH_SIZE = 256
 TRAIN_TEST_RATIO = 0.75
 
-actor_learning_rate             = 0.0006653782419255851/50
-critic_learning_rate            = actor_learning_rate * 8.172990023254641
+actor_learning_rate             = 1.33e-05
+critic_learning_rate            = actor_learning_rate * 8.120300751879698
 
 actor_input_fc_layer_params     = (209, 148)
 actor_lstm_size                 = (77,)
@@ -114,8 +115,8 @@ def configure_agent(env):
 
 
 def create_environment():
-    return Environment(discret=False, episode_time=999999, 
-                       scaler_path=None, c_coef=1, e_coef=e_coef)
+    return Environment(discret=False, episode_time=999999, connected=True, env_step_time=1,
+                       scaler_path=None, c_coef=1, e_coef=e_coef, log_steps=False, seed=64547778)
 
 
 def main(argv=None):
@@ -181,7 +182,7 @@ def main(argv=None):
         py_tf_eager_policy.PyTFEagerPolicy(
         agent.collect_policy, use_tf_function=True, batch_time_steps=True),
         [rb_observer],
-        max_steps=BATCH_SIZE*10)
+        max_steps=BATCH_SIZE)
     
     time_step = train_env.reset()
 
@@ -215,8 +216,8 @@ def main(argv=None):
 
             tqdm.write('episode = {0}: sum difference = {1}'.format(episode, sum_diff))
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/td3_online{episode}', exist_ok=True)
-            saver.save(f'./policies/td3_online{episode}')
+            os.makedirs(f'./policies/td3_real_online{episode}', exist_ok=True)
+            saver.save(f'./policies/td3_real_online{episode}')
         except KeyboardInterrupt:
             break
             print("next")

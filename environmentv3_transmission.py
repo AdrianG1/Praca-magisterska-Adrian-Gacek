@@ -17,10 +17,10 @@ import pickle
 # genertor nastaw temperatury
 def setpoint_gen(clk, seed=123141):
     rng = random.Random(seed)
-    lower_constraint = 240  # minimalny okres zmian nastaw temperatury [s]
-    upper_constraint = 600  # maksymalny okres zmian nastaw temperatury [s]
+    lower_constraint = 500  # minimalny okres zmian nastaw temperatury [s]
+    upper_constraint = 1000  # maksymalny okres zmian nastaw temperatury [s]
     min_T = 30              # minimalna wartość nastaw temperatury [*C]
-    max_T = 70              # maksymalna wartość nastaw temperatury [*C]
+    max_T = 43              # maksymalna wartość nastaw temperatury [*C]
 
     last_change = 0                         # czas ostatniej zmiany nastawy
     T_sp = rng.randint(min_T, max_T)           # wartość następnej nastawy temperatury
@@ -51,8 +51,8 @@ class SystemState():
     def __str__(self):
         return f"State: [T_diff:{self.T_diff:.02f},T_sp:{self.T_sp:.02f}]"
 
-    def as_tensor(self):
-        return tf.constant([self.T_sp, self.T_diff], dtype=tf.float32)
+    # def as_tensor(self):
+    #     return tf.constant([self.T_sp, self.T_diff], dtype=tf.float32)
 
     def as_array(self):
         return np.array([self.T_sp, self.T_diff], dtype=np.float32)
@@ -159,6 +159,7 @@ class Environment(py_environment.PyEnvironment):
         self.lab = lab()
         self.clk = tclab.clock(self.episode_time, step=self.env_step_time)
         self._T_gen = setpoint_gen(self.clk, self._seed)
+        # self._s = 0
 
         self.__set_control(0)
         self.__state_update()
@@ -193,7 +194,9 @@ class Environment(py_environment.PyEnvironment):
         if self.log_step:
             with open('environment.log', 'a') as file:
                 file.writelines([f"{self.state.T_sp},{self.state.T_diff},{current_reward},{action}\n"])
-
+        # if self._s % 20 == 0:
+        #     print(self.time, current_state, action)
+        # self._s += 1
         return self._current_time_step
 
     def __calculate_reward(self, action):
@@ -227,9 +230,9 @@ class Environment(py_environment.PyEnvironment):
     def __set_control(self, action):
         """ Ustawianie sterowania """
         if self.discret:
-            self.lab.Q1((100 / (self.num_of_actions - 1)) * action)
+            self.lab.Q2((100 / (self.num_of_actions - 1)) * action)
         else:
-            self.lab.Q1(max(min(1, action), 0)*100)
+            self.lab.Q2(max(min(1, action), 0)*100)
 
     def __gen_spec(self):
         """ generowanie specyfikacji określającej parametry środowiska """

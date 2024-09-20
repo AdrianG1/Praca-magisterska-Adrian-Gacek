@@ -30,10 +30,35 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.trajectories import Trajectory
 
 TRAINING_STEPS = 10
-BATCH_SIZE = 32
 TRAIN_TEST_RATIO = 0.75
 
+def evaluate_policy2(agent):
+    reward = 0
+    env = tf_py_environment.TFPyEnvironment(Environment(discret=True, episode_time=30, seed=5132))
 
+    policy = deepcopy(agent.policy)
+    policy_state = policy.get_initial_state(batch_size=1)
+    time_step = env.reset()
+    time_step = ts.TimeStep(
+            step_type=tf.reshape(time_step.step_type, (1, )),
+            reward=tf.reshape(time_step.reward, (1, )),
+            discount=time_step.discount,
+            observation= tf.reshape(time_step.observation, (1, 2))
+            )
+    
+    while not time_step.is_last():
+        action_step = policy.action(time_step, policy_state)
+        policy_state = action_step.state
+        time_step = env.step(action_step.action)
+        time_step = ts.TimeStep(
+                step_type=tf.reshape(time_step.step_type, (1, )),
+                reward=tf.reshape(time_step.reward, (1, )),
+                discount=time_step.discount,
+                observation= tf.reshape(time_step.observation, (1, 2))
+                )
+        reward += time_step.reward
+
+    return -reward
 
 def evaluate_policy(agent, num_test_steps=1000):
     global test_buffer
@@ -65,7 +90,7 @@ def training_agent(agent, train_iterator, num_episodes, steps_per_episode):
             experience = next(train_iterator)
             train_loss = agent.train(experience).loss
 
-        rating = evaluate_policy(agent)
+        rating = evaluate_policy2(agent)
         if rating < min_diff:
             min_diff = rating
             min_diff_ep = episode
@@ -150,7 +175,6 @@ def discretize(action):
     
 
 def create_environment():
-    #return wrappers.ActionDiscretizeWrapper(Environment(), num_actions=5)
     return Environment(discret=True)
 
 

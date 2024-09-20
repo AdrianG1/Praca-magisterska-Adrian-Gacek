@@ -64,7 +64,8 @@ class Environment(py_environment.PyEnvironment):
 
     def __init__(self, discret=False, episode_time=60, seed=123141, 
                  num_actions=5, scaler_path=None, c_coef=1, e_coef=0, 
-                 log_steps=False, env_step_time=1, connected=False):
+                 log_steps=False, env_step_time=1, connected=False, 
+                 heater_no=1, lab=None, lab_clk=None):
         
         # parametry symulacji
         self.discret = discret                  # True jeśli akcje są dyskretne
@@ -74,6 +75,9 @@ class Environment(py_environment.PyEnvironment):
         self.log_step = log_steps
         self.env_step_time = env_step_time
         self.connected = connected
+        self.lab = lab
+        self.heater_no = heater_no
+        self.clk = lab_clk
 
         self.c_coef = c_coef                    # współczynniki do wyznaczania ...  
         self.e_coef = e_coef                    # nagrody
@@ -109,12 +113,6 @@ class Environment(py_environment.PyEnvironment):
                 file.writelines([f"T_sp,T_błąd,Nagrody,Akcje\n"])
 
 
-    def __del__(self):
-        try:
-            self.lab.close()
-        except AttributeError:
-            pass
-
     def reset(self):
         """Zwraca pierwszy time_step."""
         self._current_time_step = self._reset()
@@ -141,24 +139,24 @@ class Environment(py_environment.PyEnvironment):
         return self._time_step_spec
 
     def _reset(self):
-
-        with open(os.devnull, 'w') as f:
-            with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-                # zamyka poprzednie laboratorium jeśli istnieje
-                try:    
-                    self.lab.close()
-                except AttributeError:
-                    pass
-
         # Otwieram nowe laboratorium z nowym zegarem i generatorem nastaw
-        if self.connected:
-            lab =  tclab.setup(connected=True)
-        else:
-            lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
+        if self.clk is None and self.lab is not None:
+            ValueError("Passed tclab didnt get corresponding clock as argument")
+        if self.clk is not None and self.lab is None:
+            ValueError("Passing clock without lab argument may cause errors")
 
-        self.lab = lab()
-        self.clk = tclab.clock(self.episode_time, step=self.env_step_time)
-        self._T_gen = setpoint_gen(self.clk, self._seed)
+        if self.lab is None:
+            if self.connected:
+                lab =  tclab.setup(connected=True)
+            else:
+                lab =  tclab.setup(connected=False, speedup=self.SPEEDUP)
+
+            self.lab = lab()
+            self.clk = tclab.clock(self.episode_time, step=self.env_step_time)
+
+        if self.clk is not None:
+            self._T_gen = setpoint_gen(self.clk, self._seed)
+
 
         self.__set_control(0)
         self.__state_update()
@@ -215,21 +213,31 @@ class Environment(py_environment.PyEnvironment):
 
 
     def __state_update(self):
-        """aktualizacja stanów normalizacja do wartości 0-1"""
-        T =  self.lab.T1
+        """aktualizacja stanów"""
+        if self.heater_no == 1:
+            T = self.lab.T1
+        if self.heater_no == 2:
+            T = self.lab.T2
+        if self.heater_no == 3:
+            T = self.lab.T3
+        if self.heater_no == 4:
+            T = self.lab.T4
+
         T_sp = next(self._T_gen)
-        # self.state.T = T / 100             
+
         self.state.T_sp = T_sp
-        self.state.T_diff = (T_sp - T) #/ 200 + 0.5
+        self.state.T_diff = (T_sp - T)
+
         # if int(self.time) % 10 == 0:
         #     print(self.state) 
 
     def __set_control(self, action):
         """ Ustawianie sterowania """
+
         if self.discret:
-            self.lab.Q1((100 / (self.num_of_actions - 1)) * action)
+            self.__set_Qn((100 / (self.num_of_actions - 1)) * action)
         else:
-            self.lab.Q1(max(min(1, action), 0)*100)
+            self.__set_Qn(max(min(1, action), 0)*100)
 
     def __gen_spec(self):
         """ generowanie specyfikacji określającej parametry środowiska """
@@ -260,6 +268,16 @@ class Environment(py_environment.PyEnvironment):
             observation = self._observation_spec,
             step_type   = self._step_type_spec
         )
+
+    def __set_Qn(self, a):
+        if self.heater_no == 1:
+            return self.lab.Q1(a)
+        if self.heater_no == 2:
+            return self.lab.Q2(a)
+        if self.heater_no == 3:
+            return self.lab.Q3(a)
+        if self.heater_no == 4:
+            return self.lab.Q4(a)
 
     def observation_spec(self):
         return self._observation_spec

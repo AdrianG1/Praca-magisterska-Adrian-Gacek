@@ -1,5 +1,6 @@
 import tensorflow as tf
-from environmentv3 import Environment
+# from environmentv3 import Environment
+from environmentv3_transmission import Environment
 import os
 import sys
 
@@ -29,12 +30,12 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 from tf_agents.trajectories import Trajectory
 
-TRAIN_TEST_RATIO = 0.75
-TRAINING_STEPS = 20
+TRAIN_TEST_RATIO = 0.5
+TRAINING_STEPS = 11
 
 def evaluate_policy2(agent):
     reward = 0
-    env = tf_py_environment.TFPyEnvironment(Environment(discret=False, episode_time=30, seed=5132))
+    env = tf_py_environment.TFPyEnvironment(Environment(discret=False, episode_time=15, seed=5132))
 
     policy = deepcopy(agent.policy)
     policy_state = policy.get_initial_state(batch_size=1)
@@ -94,7 +95,7 @@ def training_agent(agent, train_iterator, num_episodes):
             train_loss = agent.train(experience).loss
 
 
-        if episode in [14, 19]:
+        if episode in [5, 10]:
             rating = evaluate_policy2(agent)
             if rating > max_rating:
                 max_rating = rating
@@ -266,7 +267,7 @@ def configure_agent(env,
 
 
 def create_environment():
-    return Environment(discret=False, episode_time=60, seed=9983)
+    return Environment(discret=False, episode_time=15, seed=9983)
 
 
 def get_trajectory_from_csv(path, state_dim, train_buffer, test_buffer, TRAIN_TEST_RATIO):
@@ -321,7 +322,7 @@ def main(argv=None):
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
 
     print("================================== collecting data ===============================================")
-    get_trajectory_from_csv("./csv_data/trajectory.csv", 2, train_buffer, test_buffer, TRAIN_TEST_RATIO)
+    get_trajectory_from_csv("./csv_data/trajectory_real.csv", 2, train_buffer, test_buffer, TRAIN_TEST_RATIO)
 
     # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
     # collected_data_checkpoint.save("./replay_buffers/replay_buffer")

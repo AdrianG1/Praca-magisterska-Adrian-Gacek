@@ -82,106 +82,42 @@ def objective(trial):
     global env, train_buffer
     try:
     # num_of_layers = trial.suggest_int('num_of_layers', 2, 8)
-        batch_size_pow = trial.suggest_int('batch_size 2^', 3, 7)
+        batch_size_pow = trial.suggest_int('batch_size 2^', 3, 8)
         batch_size = 2**batch_size_pow
         num_steps_dataset = trial.suggest_int('num_steps_dataset', 2, 20)
 
-        # net structure
-        num_actor_fc_input = trial.suggest_int('num_actor_fc_input', 0, 2)
-        if  num_actor_fc_input == 3:
-            actor_fc_input = (
-                trial.suggest_int('actor_fc_input0', 64, 256),
-                trial.suggest_int('actor_fc_input1', 64, 256),
-                trial.suggest_int('actor_fc_input2', 32, 256)
-            )
-        if  num_actor_fc_input == 2:
-            actor_fc_input = (
-                trial.suggest_int('actor_fc_input0', 64, 256),
-                trial.suggest_int('actor_fc_input1', 32, 256)
-            )
-        elif  num_actor_fc_input == 1:
-            actor_fc_input = (
-                trial.suggest_int('actor_fc_input0', 64, 256),
-            )
-        else:
-            actor_fc_input = None
+        actor_input_fc_layer_params         =(134,) 
+        actor_lstm_size                     =(103,)
+        actor_output_fc_layer_params        =(100,)
+        activation_fn                       =tf.keras.activations.selu
 
+        critic_joint_fc_layer_params=None
+        critic_lstm_size                    = (40,)
+        critic_output_fc_layer_params       = (100, 100)
 
-        actor_lstm = (
-            trial.suggest_int('actor_lstm_size', 32, 128),
-        )
-
-        num_actor_fc_output = trial.suggest_int('num_actor_fc_output', 1, 2)
-        if num_actor_fc_output == 3:
-            actor_fc_output = (
-                trial.suggest_int('actor_fc_output0', 64, 256),
-                trial.suggest_int('actor_fc_output1', 64, 256),
-                100 #trial.suggest_int('actor_fc_output1', 64, 256)
-            )
-        if num_actor_fc_output == 2:
-            actor_fc_output = (
-                trial.suggest_int('actor_fc_output0', 64, 256),
-                100 #trial.suggest_int('actor_fc_output1', 64, 256)
-            )
-        else:
-            actor_fc_output = (100,)
-
-        num_critic_fc_input = trial.suggest_int('num_critic_fc_input', 0, 2)
-        if num_critic_fc_input == 2:
-            critic_fc_input = (
-                trial.suggest_int('critic_fc_input0', 64, 256),
-                trial.suggest_int('critic_fc_input1', 64, 256)
-            )        
-        elif num_critic_fc_input == 1:
-            critic_fc_input = (trial.suggest_int('critic_fc_input0', 64, 256),)
-        else:
-            critic_fc_input = None
-
-        critic_lstm = (
-            trial.suggest_int('critic_lstm_size', 32, 128),
-        )
-        num_critic_fc_output = trial.suggest_int('num_critic_fc_output', 1, 2)
-        if num_critic_fc_output == 3:
-            critic_fc_output = (
-                trial.suggest_int('critic_fc_output0', 64, 256),
-                trial.suggest_int('critic_fc_output1', 64, 256),
-                100 #trial.suggest_int('critic_fc_output1', 64, 256),
-            )      
-        elif num_critic_fc_output == 2:
-            critic_fc_output = (
-                trial.suggest_int('critic_fc_output0', 64, 256),
-                100 #trial.suggest_int('critic_fc_output1', 64, 256),
-            )
-        else:
-            critic_fc_output = (100,)
-
-        activation_idx = trial.suggest_int('activation_fn', 0, 3)
-        activation_fns = [tf.keras.activations.selu,tf.keras.activations.relu,
-                        tf.keras.activations.elu,tf.keras.activations.tanh]
-        activation_fn = activation_fns[activation_idx]
 
         #learning rates
-        actor_learning_rate = trial.suggest_loguniform('actor_learning_rate', 1e-5, 1e-3)
-        actor_critic_lr_ratio = trial.suggest_int('actor_critic_lr_ratio', 1, 100) 
-        critic_learning_rate = (1e-3 - actor_learning_rate) * actor_critic_lr_ratio / 100 + actor_learning_rate
-        alpha_learning_rate = trial.suggest_loguniform('alpha_learning_rate', 1e-5, 1e-3)
+        actor_learning_rate = 4.618152654403827e-05 * trial.suggest_loguniform('actor_learning_rate', 1e1, 1e-3)
+        critic_learning_rate = 25* actor_learning_rate* trial.suggest_loguniform('actor_critic_lr_ratio', 1e1, 1e-3)
+        alpha_learning_rate = 7.400528836439677e-05 * trial.suggest_loguniform('alpha_learning_rate', 1e1, 1e-3)
+        cql_alpha_learning_rate = 1e-5 * trial.suggest_loguniform('cql_alpha_learning_rate', 1e1, 1e-3)
 
         # other params
-        target_update_tau = trial.suggest_uniform('target_update_tau', 0.001, 0.02)
-        target_update_period = trial.suggest_int('target_update_period', 1, 2)
+        target_update_tau = 0.003415103446262748 
+        target_update_period = 1 
         gamma = trial.suggest_uniform('gamma', 0.8, 0.99)
 
-        num_cql_samples = trial.suggest_int('num_cql_samples', 1, 50)
-        cql_alpha = trial.suggest_uniform('cql_alpha', 0.70, 0.99)
-        include_critic_entropy_term = trial.suggest_categorical('include_critic_entropy_term', [True, False])
-        use_lagrange_cql_alpha = trial.suggest_categorical('use_lagrange_cql_alpha', [True, False])        
+        cql_alpha= 0.280423024569609
+        include_critic_entropy_term=True
+        num_cql_samples=13
+        use_lagrange_cql_alpha=True      
 
 
 
 
         agent = configure_agent(env,
-                        actor_fc_input, actor_lstm, actor_fc_output,
-                        critic_lstm, critic_fc_output, critic_fc_input,
+                        actor_input_fc_layer_params, actor_lstm_size, actor_output_fc_layer_params,
+                        critic_lstm_size, critic_output_fc_layer_params, critic_joint_fc_layer_params,
                         activation_fn,
                         actor_learning_rate, critic_learning_rate, alpha_learning_rate,
                         cql_alpha, include_critic_entropy_term, num_cql_samples, use_lagrange_cql_alpha,
@@ -285,22 +221,14 @@ def main(argv=None):
 
 
 
-    global test_buffer, train_buffer, strategy
+    global train_buffer, strategy
 
     train_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
                         data_spec=get_data_spec(),
                         batch_size=1,
                         max_length=8000)
-    test_buffer = []
-
+    
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
-
-    print("================================== collecting data ===============================================")
-    get_trajectory_from_csv("./csv_data/trajectory.csv", 2, train_buffer, test_buffer, TRAIN_TEST_RATIO)
-
-    # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
 
 
     print("================================== optimizing ======================================================")

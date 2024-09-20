@@ -22,12 +22,12 @@ from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
 
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 DISCOUNT = 0.75
-TRAIN_TEST_RATIO = 1
+TRAIN_TEST_RATIO = 0.5
 
-num_episodes = 50
-train_sequence_length = 6
+num_episodes = 10
+train_sequence_length = 10
 
 actor_learning_rate = 4.618152654403827e-05
 critic_learning_rate = 25* actor_learning_rate
@@ -179,6 +179,9 @@ def main(argv=None):
             saver = policy_saver.PolicySaver(agent.policy)
             os.makedirs(f'./policies/CQL{episode}', exist_ok=True)
             saver.save(f'./policies/CQL{episode}')
+
+            collected_data_checkpoint = tf.train.Checkpoint(agent)
+            collected_data_checkpoint.save(f"./policies/CCQL{episode}")
         except KeyboardInterrupt:
             break
             print("next")

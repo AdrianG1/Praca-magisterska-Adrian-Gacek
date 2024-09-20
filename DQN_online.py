@@ -1,4 +1,5 @@
-from environmentv3 import Environment
+# from environmentv3 import Environment
+from environmentv3_transmission import Environment
 import tensorflow as tf
 import numpy as np
 from tf_agents.agents.dqn import dqn_agent
@@ -26,12 +27,12 @@ from DQN import configure_agent
 # from tf_agents.trajectories import Trajectory
 
 
-BATCH_SIZE = 256
+BATCH_SIZE = 32
 DISCOUNT = 0.75
 TRAIN_TEST_RATIO = 1
 NUM_ACTIONS = 5
 
-learning_rate             = 0.0006653782419255851/2 / 50
+learning_rate             = 6.25e-5
 
 input_fc_layer_params     = (209, 148)
 lstm_size                 = (77,)
@@ -48,16 +49,14 @@ reward_scale_factor             = 0.9874855517385459
 activation_fn                   = tf.keras.activations.selu
 
 train_sequence_length = 4
-num_episodes = 50
+num_episodes = 13
 
 POLICY_LOAD_PATH = "DQN_2_30"
 buffer_size = 2000
 
-
 def create_environment():
-    return Environment(discret=True, num_actions=NUM_ACTIONS, e_coef=0, episode_time=999999999, seed=41)
-
-
+    return Environment(discret=True, episode_time=999999, connected=True, env_step_time=1,
+                       scaler_path=None, c_coef=1, e_coef=0, log_steps=False, seed=64547778)
 
 def main(argv=None):
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
@@ -121,7 +120,7 @@ def main(argv=None):
         py_tf_eager_policy.PyTFEagerPolicy(
         agent.collect_policy, use_tf_function=True, batch_time_steps=True),
         [rb_observer],
-        max_steps=BATCH_SIZE*4)
+        max_steps=BATCH_SIZE)
     
     time_step = train_env.reset()
 
@@ -131,7 +130,7 @@ def main(argv=None):
     print("================================== training ======================================================")
     configure_tensorflow_logging()
     # Run the training loop
-    steps_per_episode = 1
+    steps_per_episode = 4
     losses = []
 
     for episode in tqdm(range(num_episodes)):
@@ -155,10 +154,10 @@ def main(argv=None):
 
             tqdm.write('episode = {0}: sum difference = {1}'.format(episode, sum_diff))
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/DQN_online{episode}', exist_ok=True)
-            saver.save(f'./policies/DQN_online{episode}')
+            os.makedirs(f'./policies/DQN_real_online{episode}', exist_ok=True)
+            saver.save(f'./policies/DQN_real_online{episode}')
 
-            # if train_env.time > 120*60:
+            # if train_env.time > 120*60*2:
             #     break
 
         except KeyboardInterrupt:

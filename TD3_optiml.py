@@ -112,7 +112,7 @@ def training_agent(agent, train_iterator, num_episodes):
             train_loss = agent.train(experience).loss
 
 
-        if episode in [4, 9 , 14]:
+        if episode in [9 , 14]:
             rating = evaluate_policy2(agent)
             if rating > max_rating:
                 max_rating = rating
@@ -205,14 +205,12 @@ def objective(trial):
 
 
         actor_learning_rate = trial.suggest_loguniform('actor_learning_rate', 1e-6, 3e-3)
-        # actor_critic_lr_ratio = trial.suggest_int('target_update_period', 1, 100) 
-        # critic_learning_rate = (1e-3 - actor_learning_rate) * actor_critic_lr_ratio / 100 + actor_learning_rate
         critic_learning_rate_ratio = trial.suggest_loguniform('critic_learning_rate_ratio', 1e0, 1e2)
         critic_learning_rate = critic_learning_rate_ratio * actor_learning_rate
 
         target_update_tau = trial.suggest_uniform('target_update_tau', 0.001, 0.02)
 
-        target_update_period = 1#trial.suggest_int('target_update_period', 1, 2)
+        target_update_period = 1
         target_actor_period_difference = trial.suggest_int('target_actor_period_difference', 1, 6)
         actor_update_period = target_update_period + target_actor_period_difference
 
