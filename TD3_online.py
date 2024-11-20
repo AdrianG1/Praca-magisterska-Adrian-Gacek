@@ -32,11 +32,13 @@ from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
+# data params
 POLICY_LOAD_ID = 21
 
 BATCH_SIZE = 256
 TRAIN_TEST_RATIO = 0.75
 
+# agent params
 actor_learning_rate             = 1.33e-05
 critic_learning_rate            = actor_learning_rate * 8.120300751879698
 
@@ -51,17 +53,23 @@ critic_output_fc_layer_params   = (96,100)
 exploration_noise_std           = 0.22507554579935002
 target_update_tau               = 0.011791682151010022
 actor_update_period             = 5
-gamma                           =  0.962232033742456
+gamma                           = 0.962232033742456
 reward_scale_factor             = 0.9874855517385459
 
 activation_fn                   = tf.keras.activations.relu
 e_coef                          = 0
 buffer_size                     = 2000
 
-train_sequence_length = 4
-num_episodes = 50
+train_sequence_length           = 4
+num_episodes                    = 50
 
 def configure_agent(env):
+    """
+    Configures TD3 agent based on environment and listed configuration parameters.
+
+    :param env: environment with specification
+    :return: configured TD3 agent 
+    """
 
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
 
@@ -115,6 +123,11 @@ def configure_agent(env):
 
 
 def create_environment():
+    """
+    Creates environment specifing data structure.
+
+    :return: environment with configured spec for TD3 
+    """
     return Environment(discret=False, episode_time=999999, connected=True, env_step_time=1,
                        scaler_path=None, c_coef=1, e_coef=e_coef, log_steps=False, seed=64547778)
 
@@ -134,9 +147,7 @@ def main(argv=None):
     agent.policy.update(tf_policy)
     agent.post_process_policy()
 
-    # (Optional) Reset the agent's policy state
     agent.train = common.function(agent.train)
-
 
     table_name = 'uniform_table'
     replay_buffer_signature = tensor_spec.from_spec(
@@ -164,9 +175,6 @@ def main(argv=None):
                                 replay_buffer.py_client,
                                 table_name,
                                 sequence_length=train_sequence_length)
-    
-    # random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
-    #                                             train_env.action_spec())
     
 
     dataset = replay_buffer.as_dataset(
@@ -220,7 +228,6 @@ def main(argv=None):
             saver.save(f'./policies/td3_real_online{episode}')
         except KeyboardInterrupt:
             break
-            print("next")
 
 
     plot_loss(losses, num_episodes)

@@ -14,7 +14,15 @@ import warnings
 
 
 def evaluate_policy(agent, test_buffer, num_test_steps=1000):
-    """Evaluacja polityki poprzez porównanie ze sterowaniem PID"""
+    """
+    Evaluates policy based on difference between experienced PID response
+    to given observations and agent response for the same observations.
+
+    :param agent: evaluated agent
+    :param num_test_steps: number of steps 
+    :return: cumulative difference 
+    """
+    
     difference = 0
     policy_state = agent.policy.get_initial_state(batch_size=1)
     for i in range(min(len(test_buffer), num_test_steps)):
@@ -35,9 +43,9 @@ def evaluate_policy(agent, test_buffer, num_test_steps=1000):
 
 def abnormalize_state(state):
     """ 
-        nienormalizacja stanu (odwrócenie normalizacji)
+        inverting normalization of observations
 
-        Zwraca temperaturę i setpoint [T, T_sp]
+        :return: temperature, setpoint [T, T_sp]
     """
     # T_diff = (state[..., 1]-0.5)*100
     # T_sp = state[..., 0]*100
@@ -48,24 +56,33 @@ def abnormalize_state(state):
 
 
 def normalize_state(state):
-    """ normalizacja stanu """
+    """ 
+        normalization of observations
+
+        :return: temperature, setpoint [T, T_sp]
+    """
+    
     T_diff = (state[..., 1] / 200 + 0.5)
     T = state[..., 0] / 100
     return np.reshape(np.stack([T,T_diff], axis=-1), state.shape) 
 
 
 def discretize(action, num_actions=5):
-    """dyskretyzacja dla DQN"""
     clipped_action = max(min(action, 1), 0)
     ai = (clipped_action*100+(50/(num_actions-1)))//(100/(num_actions-1))
     return tf.constant(ai, dtype=tf.float32)
     
 def undiscretize(action, num_actions=5):
-    """odwrócenie dyskretyzacji dla DQN"""
+    """ inverting discretization """
     return tf.constant(100/(num_actions-1) * action)    
 
 def plot_trajs(trajs):
-    """ Plot kontrolny wczytywanej trajektorii"""
+    """ 
+    Plot trajectories from list to ./plot/states_trajs.png
+    
+    :param trajs: list of trajectories
+    :return:
+    """
     states = np.squeeze(np.array([traj.observation for traj in trajs]))
     actions = np.squeeze(np.array([traj.action for traj in trajs]))
     rewards = np.squeeze(np.array([traj.reward for traj in trajs]))
@@ -85,7 +102,12 @@ def plot_trajs(trajs):
 
 
 def get_data_spec():
-    """ generacja specyfikacji trajektorii z pominięciem agenta """
+    """ 
+    Generates data specification for agents w/o initializing environment
+
+    :return: Trajectory 
+
+    """
     return Trajectory(  tensor_spec.TensorSpec(shape=(), dtype=np.int32, name='step_type'), 
                         tensor_spec.TensorSpec(shape=(2,), dtype=np.float32, name='observation'),
                         tensor_spec.BoundedTensorSpec(shape=(), dtype=np.float32, minimum=0, maximum=100.0, name='action'), 
@@ -97,6 +119,13 @@ def get_data_spec():
 
 
 def plot_loss(losses, num_episodes=0):
+    """ 
+    Plot loss after training to ./plot/losses.png
+    
+    :param trajs: list of trajectories
+    :return:
+    """
+    
     plt.figure()
     plt.plot(losses, "b")
 
@@ -112,7 +141,19 @@ def plot_loss(losses, num_episodes=0):
 
 
 def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, train_test_ratio, discount=0.75):
-    """ Wczytywanie danych z csv """
+    """
+    Fills replay buffer with Trajectories created from experience stored in csv file  
+    
+    :param path:             path to csv file
+    :param state_dim:        number of dimensions of observation
+    :param replay_buffer:    filled replay buffer with train set
+    :param test_buffer:      filled replay buffer with test set
+    :param train_test_ratio: train_test_ratio
+    :param discount:         discount of rewards in experience
+
+    :return: list of trajectories useful for debugging               
+    """
+    
     df = read_csv(path, index_col=0)
 
     trajs = []
@@ -145,9 +186,10 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer, test_buffer, train_t
 
 class CustomReplayBuffer(UserList):
     """
-    Alternatywny replay buffer, który ma za zadanie bardziej równomiernie wykorzystywać dane uczące
-    wykorzystując w losowej kolejności wszystkie dane tyle samo razy.
+    An alternative replay buffer that is designed to use the training data more evenly 
+    by using all the data the same number of times in random order.
     """
+
     def __init__(self, batch_size=32, num_steps=2):
         super().__init__([])
         self._batch_size=batch_size 
@@ -157,34 +199,38 @@ class CustomReplayBuffer(UserList):
         return self.dataset_gen()  
 
     def dataset_gen(self):
+        """
+        generator returning data in random order
+        """
+
         indexes = np.arange(len(self.data)-self._num_steps+1)
         idx = 0
 
         while True:
-            # po przejściu wszystkich przestaw kolejność pobierania z listy
+            # after going through all of data, rearrange the order in the list
             np.random.shuffle(indexes)
 
-            while idx < indexes.shape[0]: # po kolei po przetasowanych indeksach
+            while idx < indexes.shape[0]: # in order by shuffled indexes
 
-                # jeśli koniec batcha nie przekracza zakresu indeksów
+                # if the end of the batch does not exceed the index range
                 if idx + self._batch_size < indexes.shape[0]:
                     batch = []
                     for i in range(idx, idx+self._batch_size):
                         shuffled_idx = indexes[i]
-                        # slice wycina _num_steps kolejnych doświadczeń z listy
+                        # slice _num_steps consecutive experiences from list
                         batch.append(self.data[shuffled_idx:shuffled_idx+self._num_steps]) 
 
                     idx += self._batch_size
 
-                # jeśli koniec batcha  przekracza zakresu indeksów
+                # if the end of the batch does exceed the index range
                 else:
                     batch = []
-                    # przejście do końca listy
+                    # slice to the end of list
                     for i in range(idx, indexes.shape[0]):
                         shuffled_idx = indexes[i]
                         batch.append(self.data[shuffled_idx:shuffled_idx+self._num_steps] ) 
 
-                    # dopełnienie początkiem listy
+                    # complement with beginning of the list
                     for i in range(idx+self._batch_size - indexes.shape[0]):
                         shuffled_idx = indexes[i]
                         batch.append(self.data[shuffled_idx:shuffled_idx+self._num_steps] ) 
@@ -200,6 +246,7 @@ class CustomReplayBuffer(UserList):
                 reward          = np.ndarray((len(batch), len(batch[0])))
                 discount        = np.ndarray((len(batch), len(batch[0])))
 
+                # create trajectory from data batch
                 for b in range(len(batch)):
                     for s in range(len(batch[0])):
                         step_type     [b, s] = batch[b][s].step_type       
@@ -221,6 +268,13 @@ class CustomReplayBuffer(UserList):
                 yield traj #Trajectory()
 
     def equal_actions(self):
+        """
+        Balancing the dataset self.data based on the number of actions of each type.
+        Removes data with overrepresented actions in dataset. Makes dataset more balanced with actions,
+        but breaks continuity of data.       
+
+        """
+
         print(len(self.data))
         a = {}
         for traj in self.data:
@@ -252,36 +306,39 @@ class CustomReplayBuffer(UserList):
 
 
 def configure_tensorflow_logging():
+    """
+    Cleans unnecessary logs from tensorflow, saves them to log file       
 
+    """
     open('tensorflow_info.log', 'w').close()
 
-    # Ustaw poziom logowania TensorFlow na INFO, aby przechwytywać wszystkie logi
+    # Set TensorFlow logging level to INFO to capture all logs
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
     tf.get_logger().setLevel('INFO')
 
-    # Skonfiguruj własny logger
+    # Configure logger
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # Utwórz handler dla logów poniżej poziomu ERROR, który zapisuje do pliku
+    # Create a handler for logs below ERROR level that writes to a file
     file_handler = logging.FileHandler('tensorflow_info.log')
     file_handler.setLevel(logging.INFO)
     file_handler.addFilter(lambda record: record.levelno < logging.ERROR)
 
-    # Utwórz handler dla logów ERROR i wyższych, które są wyświetlane normalnie
+    # Create a handler for ERROR and higher logs that are displayed normally
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.ERROR)
 
-    # Dodaj formatery do handlerów (opcjonalne, ale zalecane)
+    # Add formatters to handlers
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
     console_handler.setFormatter(formatter)
 
-    # Usuń domyślne handlery, aby uniknąć podwójnych logów
+    # Remove default handlers to avoid double logging
     for handler in logger.handlers:
         logger.removeHandler(handler)
 
-    # Dodaj handlery do loggera
+    # add handlers to logger
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
 

@@ -20,12 +20,15 @@ from tf_agents.trajectories import Trajectory
 from tf_agents.specs import array_spec
 import os
 from tqdm import tqdm
+from pandas import read_csv
 
-BATCH_SIZE = 256
-DISCOUNT = 0.75
-TRAIN_TEST_RATIO = 0.5
-NUM_ACTIONS = 5
+# data params
+BATCH_SIZE          = 256
+DISCOUNT            = 0.75
+TRAIN_TEST_RATIO    = 0.5
+NUM_ACTIONS         = 5
 
+# agent params
 learning_rate             = 0.00033268912096279257
 
 input_fc_layer_params     = (209, 148)
@@ -33,16 +36,16 @@ lstm_size                 = (77,)
 output_fc_layer_params    = (216, 100)
 
 
-target_update_tau               = 0.005041497519914242
-target_update_period            = 1
-epsilon_greedy                  = 0.1
-gamma                           = 0.962232033742456 
-reward_scale_factor             = 0.9874855517385459 
+target_update_tau         = 0.005041497519914242
+target_update_period      = 1
+epsilon_greedy            = 0.1
+gamma                     = 0.962232033742456 
+reward_scale_factor       = 0.9874855517385459 
 
-activation_fn                   = tf.keras.activations.selu
+activation_fn             = tf.keras.activations.selu
 
-train_sequence_length = 4
-num_episodes = 25
+train_sequence_length     = 4
+num_episodes              = 25
 
 def create_environment():
     #return wrappers.ActionDiscretizeWrapper(Environment(), num_actions=5)
@@ -51,6 +54,13 @@ def create_environment():
 
 
 def configure_agent(env):
+    """
+    Configures DQN agent based on environment and listed configuration parameters.
+
+    :param env: environment with specification
+    :return: configured DQN agent 
+    """
+
     q_net = q_rnn_network.QRnnNetwork(
             env.observation_spec(),
             env.action_spec(),
@@ -76,7 +86,16 @@ def configure_agent(env):
     return agent
 
 def get_trajectory_from_csv(path, state_dim, replay_buffer):
-    from pandas import read_csv
+    """
+    Fills replay buffer with Trajectories created from experience stored in csv file  
+    
+    :param path:            path to csv file
+    :param state_dim:       number of dimensions of observation
+    :param replay_buffer:   filled replay buffer 
+    
+    :return: list of trajectories useful for debugging               
+    """
+
     df = read_csv(path, index_col=0)
 
     global trajs
@@ -100,7 +119,7 @@ def get_trajectory_from_csv(path, state_dim, replay_buffer):
                         tf.constant(1, dtype=tf.int32, shape=(1,)),
                         tf.constant(reward, dtype=tf.float32, shape=(1,)), 
                         tf.constant(DISCOUNT, dtype=tf.float32, shape=(1,)))
-        # replay_buffer.append(traj)
+
         trajs.append(traj)
         replay_buffer.add_batch(traj)
 
@@ -120,10 +139,7 @@ def main(argv=None):
     train_env = tf_py_environment.TFPyEnvironment(env)
     agent = configure_agent(train_env)
     agent.initialize()
-    # (Optional) Reset the agent's policy state
     agent.train = common.function(agent.train)
-
-    # replay_buffer = CustomReplayBuffer(num_steps=train_sequence_length)
 
     replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
                         data_spec=agent.collect_data_spec,
@@ -134,8 +150,7 @@ def main(argv=None):
     print("================================== collecting data ===============================================")
     trajs = get_trajectory_from_csv("./csv_data/trajectory_real.csv", 2, replay_buffer)
     plot_trajs(trajs)
-    # Dataset generates trajectories with shape [Bx2x...]
-    # iterator = replay_buffer.get_iterator()
+
     dataset = replay_buffer.as_dataset(
         num_parallel_calls=3, 
         sample_batch_size=BATCH_SIZE, 
@@ -146,7 +161,7 @@ def main(argv=None):
     print("================================== training ======================================================")
     # Run the training loop
     num_episodes = 25
-    steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE*4
+    steps_per_episode = int(replay_buffer.num_frames()) // BATCH_SIZE * 4
 
     losses = []
 

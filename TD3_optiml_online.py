@@ -30,6 +30,7 @@ from tf_agents.trajectories import time_step as ts
 from tf_agents.policies import policy_loader
 from tf_agents.policies import py_tf_eager_policy
 
+# params
 TRAINING_STEPS = 50
 TRAIN_TEST_RATIO = 0.75
 POLICY_LOAD_ID = 21
@@ -43,6 +44,13 @@ critic_lstm_size                = (124,)
 critic_output_fc_layer_params   = (96, 100)
 
 def evaluate_policy2(agent):
+    """
+    Evaluates policy based off cumulative rewards
+
+    :param agent: evaluated agent
+    :return: cumulative reward 
+    """
+    
     reward = 0
     env = tf_py_environment.TFPyEnvironment(Environment(discret=False, episode_time=30, seed=5132))
 
@@ -71,6 +79,15 @@ def evaluate_policy2(agent):
     return -reward
 
 def evaluate_policy(policy):
+    """
+    Evaluates policy based on difference between experienced PID response
+    to given observations and agent response for the same observations.
+
+    :param agent: evaluated agent
+    :param num_test_steps: number of steps 
+    :return: cumulative difference 
+    """
+    
     difference = 0
     env = tf_py_environment.TFPyEnvironment(Environment(discret=False, episode_time=30, seed=5132))
 
@@ -99,6 +116,15 @@ def evaluate_policy(policy):
 
 
 def training_agent(agent, train_env, batch_size, buffer_size, num_steps_dataset, num_episodes):
+    """
+    Training agent with tested configuration
+
+    :param train_iterator: generator returning experience (train data)
+    :param num_episodes: number of episodes per training
+    
+    :return: max rating from evaluation 
+    """
+   
     steps_per_episode = 10
     min_diff = np.inf
     min_diff_ep = -1
@@ -174,7 +200,14 @@ def training_agent(agent, train_env, batch_size, buffer_size, num_steps_dataset,
 
 
 def objective(trial):
-
+    """
+    Optimized objective function necessary for optuna. Configures agent based on constraints, trains
+    it and evaluate
+    
+    :param trial: trial optuna object
+    :return: max rating from trial 
+    """
+    
     try:
         c_coef = 1
         e_coef = trial.suggest_int('e_coef', 0, 200)

@@ -29,6 +29,13 @@ TRAINING_STEPS = 20
 
 
 def evaluate_policy2(agent):
+    """
+    Evaluates policy based off cumulative rewards
+
+    :param agent: evaluated agent
+    :return: cumulative reward 
+    """
+    
     reward = 0
     env = tf_py_environment.TFPyEnvironment(Environment(discret=False, episode_time=30, seed=5132))
 
@@ -58,6 +65,15 @@ def evaluate_policy2(agent):
 
 
 def training_agent(agent, train_iterator, num_episodes):
+    """
+    Training agent with tested configuration
+
+    :param train_iterator: generator returning experience (train data)
+    :param num_episodes: number of episodes per training
+    
+    :return: max rating from evaluation 
+    """
+    
     steps_per_episode = 110
     max_rating = -np.inf
     max_rating_ep = -1
@@ -79,6 +95,14 @@ def training_agent(agent, train_iterator, num_episodes):
 
 
 def objective(trial):
+    """
+    Optimized objective function necessary for optuna. Configures agent based on constraints, trains
+    it and evaluate
+    
+    :param trial: trial optuna object
+    :return: max rating from trial 
+    """
+    
     global env, train_buffer
     try:
         # num_of_layers = trial.suggest_int('num_of_layers', 2, 8)
@@ -141,6 +165,13 @@ def configure_agent(env,
                     cql_alpha, include_critic_entropy_term, num_cql_samples, use_lagrange_cql_alpha,
                     target_update_tau, target_update_period,gamma
                     ):
+    """
+    Configures SAC agent based on environment and passed parameters.
+    
+    :param env:
+    :params ...: parameters of SAC agent
+    :return: configured SAC agent 
+    """
 
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
     

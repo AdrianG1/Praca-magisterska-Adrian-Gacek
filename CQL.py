@@ -22,47 +22,53 @@ from tqdm import tqdm
 from tf_agents.trajectories import Trajectory
 from tf_agents.train.utils import strategy_utils
 
-BATCH_SIZE = 256
-DISCOUNT = 0.75
-TRAIN_TEST_RATIO = 0.5
+# data params
+BATCH_SIZE          = 256
+TRAIN_TEST_RATIO    = 0.5
 
-num_episodes = 10
-train_sequence_length = 10
+# agent params
+num_episodes                        = 10
+train_sequence_length               = 10
 
-actor_learning_rate = 4.618152654403827e-05
-critic_learning_rate = 25* actor_learning_rate
-alpha_learning_rate = 7.400528836439677e-05
-cql_alpha_learning_rate = 1e-5
+actor_learning_rate                 = 4.618152654403827e-05
+critic_learning_rate                = 25* actor_learning_rate
+alpha_learning_rate                 = 7.400528836439677e-05
+cql_alpha_learning_rate             = 1e-5
 
-cql_alpha= 0.280423024569609
-include_critic_entropy_term=True
-num_cql_samples=13
-use_lagrange_cql_alpha=True
+cql_alpha                           = 0.280423024569609
+include_critic_entropy_term         = True
+num_cql_samples                     = 13
+use_lagrange_cql_alpha              = True
 
-target_update_tau = 0.003415103446262748 
-target_update_period = 1 
-gamma = 0.855869890833244 
-reward_scale_factor = 1
+target_update_tau                   = 0.003415103446262748 
+target_update_period                = 1 
+gamma                               = 0.855869890833244 
+reward_scale_factor                 = 1
 
-actor_input_fc_layer_params         =(134,) 
-actor_lstm_size                     =(103,)
-actor_output_fc_layer_params        =(100,)
-actor_activation_fn                 =tf.keras.activations.selu
+actor_input_fc_layer_params         = (134,) 
+actor_lstm_size                     = (103,)
+actor_output_fc_layer_params        = (100,)
+actor_activation_fn                 = tf.keras.activations.selu
 
-critic_joint_fc_layer_params=None
-critic_lstm_size=                   (40,)
-critic_output_fc_layer_params           =(100, 100)
-critic_activation_fn=tf.keras.activations.selu
+critic_joint_fc_layer_params        = None
+critic_lstm_size                    = (40,)
+critic_output_fc_layer_params       = (100, 100)
+critic_activation_fn                = tf.keras.activations.selu
 
 
 
 def configure_agent(env):
+    """
+    Configures CQL agent based on environment and listed configuration parameters.
+
+    :param env: environment with specification
+    :return: configured CQL agent 
+    """
 
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
     
     # Actor network
     with strategy.scope():
-        # flatten = tf.keras.layers.Flatten()
 
         actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
                                 env.observation_spec(),
@@ -73,7 +79,6 @@ def configure_agent(env):
                                 output_fc_layer_params=actor_output_fc_layer_params,
                                 activation_fn=actor_activation_fn)
 
-        # combined_actor = sequential.Sequential([flatten, actor_net])
         
         # Critic network
         critic_net = critic_rnn_network.CriticRnnNetwork(
@@ -86,7 +91,6 @@ def configure_agent(env):
             output_fc_layer_params=critic_output_fc_layer_params,
             activation_fn=critic_activation_fn
         )
-        # combined_critic = sequential.Sequential([flatten, critic_net])
 
 
         agent = cql_sac_agent.CqlSacAgent(
@@ -117,6 +121,11 @@ def configure_agent(env):
 
 
 def create_environment():
+    """
+    Creates environment specifing data structure.
+
+    :return: environment with configured spec for CQL 
+    """
     return Environment(discret=False)
 
 
@@ -146,10 +155,6 @@ def main(argv=None):
     trajs = get_trajectory_from_csv("./csv_data/trajectory7.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
     plot_trajs(trajs)
 
-    # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
-
     # Dataset generates trajectories with shape [Bx2x...]
     dataset = replay_buffer.as_dataset(
         num_parallel_calls=3, 
@@ -172,9 +177,6 @@ def main(argv=None):
                 step = agent.train_step_counter.numpy()
                 losses[step] = train_loss
             tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
-            # if episode % 5 == 0:
-            #     tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
-
 
             saver = policy_saver.PolicySaver(agent.policy)
             os.makedirs(f'./policies/CQL{episode}', exist_ok=True)
@@ -184,7 +186,6 @@ def main(argv=None):
             collected_data_checkpoint.save(f"./policies/CCQL{episode}")
         except KeyboardInterrupt:
             break
-            print("next")
 
     plot_loss(losses, num_episodes)
     saver = policy_saver.PolicySaver(agent.policy)

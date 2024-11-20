@@ -24,10 +24,12 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
 
+# data params
 BATCH_SIZE = 64
 TRAIN_TEST_RATIO = 0.5
 
 
+# agent params
 actor_learning_rate             = 6.653782419255851e-05
 critic_learning_rate            = actor_learning_rate * 8.172990023254641
 
@@ -42,15 +44,21 @@ critic_output_fc_layer_params   = (96,100)
 exploration_noise_std           = 0.22507554579935002
 target_update_tau               = 0.011791682151010022
 actor_update_period             = 5
-gamma                           =  0.962232033742456
+gamma                           = 0.962232033742456
 reward_scale_factor             = 0.5874855517385459
 
 activation_fn                   = tf.keras.activations.relu
 
-train_sequence_length = 4
-num_episodes = 25
+train_sequence_length           = 4
+num_episodes                    = 25
 
 def configure_agent(env):
+    """
+    Configures TD3 agent based on environment and listed configuration parameters.
+
+    :param env: environment with specification
+    :return: configured TD3 agent 
+    """
 
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
 
@@ -67,6 +75,7 @@ def configure_agent(env):
             activation_fn=activation_fn
         )
 
+    # Critic network
         critic_net = critic_rnn_network.CriticRnnNetwork(
             (env.observation_spec(), env.action_spec()),
             observation_conv_layer_params=None,
@@ -103,6 +112,11 @@ def configure_agent(env):
 
 
 def create_environment():
+    """
+    Creates environment specifing data structure.
+
+    :return: environment with configured spec for TD3 
+    """
     return Environment(discret=False)
 
 
@@ -131,10 +145,6 @@ def main(argv=None):
     print("================================== collecting data ===============================================")
     trajs = get_trajectory_from_csv("./csv_data/trajectory8.csv", 2, replay_buffer, [], TRAIN_TEST_RATIO, discount=0)
     plot_trajs(trajs)
-
-    # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
 
     # Dataset generates trajectories with shape [Bx2x...]
     dataset = replay_buffer.as_dataset(
@@ -165,8 +175,8 @@ def main(argv=None):
             tqdm.write('step = {0}: mean loss = {1}'.format(step, sum_loss/steps_per_episode))
 
             saver = policy_saver.PolicySaver(agent.policy)
-            os.makedirs(f'./policies/t3d3{episode}', exist_ok=True)
-            saver.save(f'./policies/t3d3{episode}')
+            os.makedirs(f'./policies/td3_{episode}', exist_ok=True)
+            saver.save(f'./policies/td3_{episode}')
         except KeyboardInterrupt:
             break
             print("next")

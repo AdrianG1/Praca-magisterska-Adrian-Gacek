@@ -25,9 +25,11 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 
 
-BATCH_SIZE = 64
-TRAIN_TEST_RATIO = 1
+# data params
+BATCH_SIZE          = 64
+TRAIN_TEST_RATIO    = 1
 
+# agent params
 actor_learning_rate             = 1,88e-4
 critic_learning_rate            = actor_learning_rate * 47.615404273158745
 alpha_learning_rate             = 8.850215277629775e-05
@@ -54,7 +56,12 @@ num_episodes                    = 25
 
 
 def configure_agent(env):
+    """
+    Configures SAC agent based on environment and listed configuration parameters.
 
+    :param env: environment with specification
+    :return: configured SAC agent 
+    """
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
     
     # Actor network
@@ -110,6 +117,12 @@ def configure_agent(env):
 
 
 def create_environment():
+    """
+    Creates environment specifing data structure.
+
+    :return: environment with configured spec for SAC 
+    """
+    
     return Environment(discret=False)
 
 
@@ -139,11 +152,6 @@ def main(argv=None):
     trajs = get_trajectory_from_csv("./csv_data/trajectory_real.csv", 2, replay_buffer, test_buffer, TRAIN_TEST_RATIO)
     plot_trajs(trajs)
 
-    # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
-
-    # Dataset generates trajectories with shape [Bx2x...]
     dataset = replay_buffer.as_dataset(
         num_parallel_calls=3, 
         sample_batch_size=BATCH_SIZE, 
@@ -166,15 +174,12 @@ def main(argv=None):
                 step = agent.train_step_counter.numpy()
                 losses[step] = train_loss
             tqdm.write('step = {0}: loss = {1}'.format(step, train_loss))
-            # if episode % 5 == 4:
-            #     tqdm.write('evaluated difference = {0}:\n'.format(evaluate_policy(agent, test_buffer)))
-            
+          
             saver = policy_saver.PolicySaver(agent.policy)
             os.makedirs(f'./policies/SAC_{episode}', exist_ok=True)
             saver.save(f'./policies/SAC_{episode}')
         except KeyboardInterrupt:
             break
-            print("next")
 
     plot_loss(losses, num_episodes)
     saver = policy_saver.PolicySaver(agent.policy)

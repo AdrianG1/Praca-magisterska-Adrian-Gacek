@@ -32,6 +32,7 @@ from tf_agents.utils import common
 from tf_agents.trajectories import time_step as ts
 from tf_agents.train.utils import strategy_utils
 
+# params
 TRAINING_STEPS = 20
 BATCH_SIZE = 32
 TRAIN_TEST_RATIO = 0.75
@@ -40,6 +41,15 @@ buffer_size = 1000
 CONNECTED = True
 
 def evaluate_policy(agent):
+    """
+    Evaluates policy based on difference between experienced PID response
+    to given observations and agent response for the same observations.
+
+    :param agent: evaluated agent
+    :param num_test_steps: number of steps 
+    :return: cumulative difference 
+    """
+
     env = tf_py_environment.TFPyEnvironment(Environment(discret=True, connected=CONNECTED, 
                                                         episode_time=60, seed=5132))
 
@@ -74,6 +84,15 @@ def evaluate_policy(agent):
 
 
 def training_agent(agent, train_sequence_length):
+    """
+    Training agent with tested configuration
+
+    :param train_iterator: generator returning experience (train data)
+    :param num_episodes: number of episodes per training
+    
+    :return: max rating from evaluation 
+    """
+    
     train_env = create_environment()
     train_py_env = tf_py_environment.TFPyEnvironment(train_env)
     
@@ -103,10 +122,7 @@ def training_agent(agent, train_sequence_length):
                                 replay_buffer.py_client,
                                 table_name,
                                 sequence_length=train_sequence_length)
-    
-    # random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
-    #                                             train_env.action_spec())
-    
+     
 
     dataset = replay_buffer.as_dataset(
             num_parallel_calls=3,
@@ -142,6 +158,14 @@ def training_agent(agent, train_sequence_length):
     del train_env
 
 def objective(trial):
+    """
+    Optimized objective function necessary for optuna. Configures agent based on constraints, trains
+    it and evaluate
+    
+    :param trial: trial optuna object
+    :return: max rating from trial 
+    """
+    
     global env, train_buffer
 
     input_fc_layer_params     = (209, 148)
@@ -186,6 +210,13 @@ def objective(trial):
 def configure_agent(env, input_fc_layer_params, lstm_size, output_fc_layer_params, activation_fn,
                     learning_rate, epsilon_greedy, n_step_update, target_update_tau, target_update_period, 
                     gamma):
+    """
+    Configures DQN agent based on environment and passed parameters.
+    
+    :param env:
+    :params ...: parameters of DQN agent
+    :return: configured DQN agent 
+    """
 
     q_net = q_rnn_network.QRnnNetwork(
         env.observation_spec(),

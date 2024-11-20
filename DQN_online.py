@@ -24,35 +24,36 @@ from tqdm import tqdm
 import os
 from utils import plot_loss, configure_tensorflow_logging
 from DQN import configure_agent
-# from tf_agents.trajectories import Trajectory
 
 
-BATCH_SIZE = 32
-DISCOUNT = 0.75
-TRAIN_TEST_RATIO = 1
-NUM_ACTIONS = 5
-
-learning_rate             = 6.25e-5
-
-input_fc_layer_params     = (209, 148)
-lstm_size                 = (77,)
-output_fc_layer_params    = (216, 100)
-
-
-target_update_tau               = 0.008304567528251162
-actor_update_period             = 1
-target_update_period            = 5
-epsilon_greedy                  = 0.0561704800919212
-gamma                           = 0.73070440103918044
-reward_scale_factor             = 0.9874855517385459 
-
-activation_fn                   = tf.keras.activations.selu
-
-train_sequence_length = 4
-num_episodes = 13
-
+# data params
+BATCH_SIZE          = 32
+DISCOUNT            = 0.75
+TRAIN_TEST_RATIO    = 1
+NUM_ACTIONS         = 5
 POLICY_LOAD_PATH = "DQN_2_30"
-buffer_size = 2000
+
+# agent params
+learning_rate               = 6.25e-5
+
+input_fc_layer_params       = (209, 148)
+lstm_size                   = (77,)
+output_fc_layer_params      = (216, 100)
+
+
+target_update_tau           = 0.008304567528251162
+actor_update_period         = 1
+target_update_period        = 5
+epsilon_greedy              = 0.0561704800919212
+gamma                       = 0.73070440103918044
+reward_scale_factor         = 0.9874855517385459 
+
+activation_fn               = tf.keras.activations.selu
+
+train_sequence_length       = 4
+num_episodes                = 13
+
+buffer_size                 = 2000
 
 def create_environment():
     return Environment(discret=True, episode_time=999999, connected=True, env_step_time=1,
@@ -103,9 +104,7 @@ def main(argv=None):
                                 table_name,
                                 sequence_length=train_sequence_length)
     
-    # random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
-    #                                             train_env.action_spec())
-    
+
 
     dataset = replay_buffer.as_dataset(
             num_parallel_calls=3,
@@ -157,12 +156,8 @@ def main(argv=None):
             os.makedirs(f'./policies/DQN_real_online{episode}', exist_ok=True)
             saver.save(f'./policies/DQN_real_online{episode}')
 
-            # if train_env.time > 120*60*2:
-            #     break
-
         except KeyboardInterrupt:
             break
-            print("next")
 
 
     plot_loss(losses, num_episodes)

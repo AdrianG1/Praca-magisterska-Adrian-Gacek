@@ -2,9 +2,9 @@ import tensorflow as tf
 import numpy as np
 from utils import abnormalize_state
 
-Kc, tauI, tauD = 5.95 , 63, 0.0
 
 class PID():
+    """ Class representing PID controller """
 
     def __init__(self, Kc=14.55 , tauI=60.06, tauD=15.02):
         self.Kc   = Kc 
@@ -22,6 +22,15 @@ class PID():
         self.Kc = new_Kc
 
     def control(self, observation, time):
+        """
+        Takes observation and calculates response. 
+        
+        :param observation: observation [temperature, setpoint]
+        :param time:        current time
+
+        :return: control signal             
+        """   
+
         real_state = abnormalize_state(observation)
         y, sp = real_state[0], real_state[1]
         error = sp - y

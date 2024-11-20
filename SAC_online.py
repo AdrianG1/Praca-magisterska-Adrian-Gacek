@@ -28,13 +28,15 @@ from tf_agents.policies import policy_saver, policy_loader
 from tqdm import tqdm
 from tf_agents.train.utils import strategy_utils
 
-POLICY_LOAD_ID = 8
+# data params
+POLICY_LOAD_ID      = 8
 
-BATCH_SIZE = 256
-TRAIN_TEST_RATIO = 0.75
+BATCH_SIZE          = 256
+TRAIN_TEST_RATIO    = 0.75
 
-num_episodes = 60
-train_sequence_length = 4
+# agent params
+num_episodes                    = 60
+train_sequence_length           = 4
 actor_learning_rate             = 3.76e-05
 critic_learning_rate            = actor_learning_rate * 47.6063829787234
 alpha_learning_rate             = 2.95e-06
@@ -48,7 +50,7 @@ critic_joint_fc_layer_params    = None
 critic_lstm_size                = (35,)
 critic_output_fc_layer_params   = (105, 100)
 
-target_update_tau               =  0.031101832198767103
+target_update_tau               = 0.031101832198767103
 target_update_period            = 1
 actor_update_period             = 3
 gamma                           = 0.9674273939790276
@@ -61,6 +63,12 @@ buffer_size                     = 2000
 
 
 def configure_agent(env):
+    """
+    Configures SAC agent based on environment and listed configuration parameters.
+
+    :param env: environment with specification
+    :return: configured SAC agent 
+    """
 
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
     
@@ -132,7 +140,6 @@ def main(argv=None):
     tf_policy = policy_loader.load(f'./policies/SAC-{POLICY_LOAD_ID}')    
     agent.policy.update(tf_policy)
 
-    # (Optional) Reset the agent's policy state
     agent.train = common.function(agent.train)
 
 
@@ -163,9 +170,7 @@ def main(argv=None):
                                 table_name,
                                 sequence_length=train_sequence_length)
     
-    # random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
-    #                                             train_env.action_spec())
-    
+
 
     dataset = replay_buffer.as_dataset(
             num_parallel_calls=3,
@@ -192,7 +197,7 @@ def main(argv=None):
     # Run the training loop
     steps_per_episode = 1
     losses = []
-    max_U = 0
+
     for episode in tqdm(range(num_episodes)):
         try:
             sum_diff = 0
@@ -218,7 +223,6 @@ def main(argv=None):
             saver.save(f'./policies/SAC_online{episode}')
         except KeyboardInterrupt:
             break
-            print("next")
 
 
     plot_loss(losses, num_episodes)

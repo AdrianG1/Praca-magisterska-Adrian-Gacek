@@ -31,34 +31,36 @@ from tf_agents.train.utils import strategy_utils
 from tf_agents.agents.sac import tanh_normal_projection_network
 from CQL import configure_agent
 
-POLICY_LOAD_ID = 9
+# data params
+POLICY_LOAD_ID      = 9
 
-BATCH_SIZE = 254
-TRAIN_TEST_RATIO = 0.75
+BATCH_SIZE          = 254
+TRAIN_TEST_RATIO    = 0.75
 
-num_episodes = 50
-train_sequence_length = 10
-buffer_size = 3000
+# agent params
+num_episodes                = 50
+train_sequence_length       = 10
+buffer_size                 = 3000
 
-actor_learning_rate = 1.53e-06
-critic_learning_rate = 25.16 * actor_learning_rate      
-alpha_learning_rate = 2.47e-06
-cql_alpha_learning_rate = 3.33e-07
+actor_learning_rate         = 1.53e-06
+critic_learning_rate        = 25.16 * actor_learning_rate      
+alpha_learning_rate         = 2.47e-06
+cql_alpha_learning_rate     = 3.33e-07
 
-cql_alpha= 0.280423024569609
-include_critic_entropy_term=True
-num_cql_samples=13
-use_lagrange_cql_alpha=True
+cql_alpha                   = 0.280423024569609
+include_critic_entropy_term = True
+num_cql_samples             = 13
+use_lagrange_cql_alpha      = True
 
-target_update_tau = 0.003415103446262748 
-target_update_period = 1 
-gamma = 0.855869890833244 
-reward_scale_factor = 1
+target_update_tau           = 0.003415103446262748 
+target_update_period        = 1 
+gamma                       = 0.855869890833244 
+reward_scale_factor         = 1
 
-actor_input_fc_layer_params         =(134,) 
-actor_lstm_size                     =(103,)
-actor_output_fc_layer_params        =(100,)
-actor_activation_fn                 =tf.keras.activations.selu
+actor_input_fc_layer_params         = (134,) 
+actor_lstm_size                     = (103,)
+actor_output_fc_layer_params        = (100,)
+actor_activation_fn                 = tf.keras.activations.selu
 
 critic_joint_fc_layer_params=None
 critic_lstm_size                    = (40,)
@@ -67,6 +69,12 @@ critic_activation_fn                = tf.keras.activations.selu
 
 
 def create_environment():
+    """
+    Configures CQL agent based on environment and listed configuration parameters.
+
+    :param env: environment with specification
+    :return: configured CQL agent 
+    """
     return Environment(discret=False, episode_time=999999, connected=True, env_step_time=1,
                        scaler_path=None, c_coef=1, e_coef=0, log_steps=False, seed=64547778)
 

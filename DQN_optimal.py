@@ -33,6 +33,13 @@ TRAINING_STEPS = 10
 TRAIN_TEST_RATIO = 0.75
 
 def evaluate_policy2(agent):
+    """
+    Evaluates policy based off cumulative rewards
+
+    :param agent: evaluated agent
+    :return: cumulative reward 
+    """
+    
     reward = 0
     env = tf_py_environment.TFPyEnvironment(Environment(discret=True, episode_time=30, seed=5132))
 
@@ -82,8 +89,15 @@ def evaluate_policy(agent, num_test_steps=1000):
 
 
 def training_agent(agent, train_iterator, num_episodes, steps_per_episode):
+    """
+    Training agent with tested configuration
+
+    :param train_iterator: generator returning experience (train data)
+    :param num_episodes: number of episodes per training
+    
+    :return: max rating from evaluation 
+    """
     min_diff = np.inf
-    min_diff_ep = -1
 
     for episode in range(num_episodes):
         for _ in range(steps_per_episode):
@@ -95,11 +109,18 @@ def training_agent(agent, train_iterator, num_episodes, steps_per_episode):
             min_diff = rating
             min_diff_ep = episode
      
-    # print("\n\n\n min diff (ep): ", min_diff,  min_diff_ep, "\n")
     return min_diff
 
 
 def objective(trial):
+    """
+    Optimized objective function necessary for optuna. Configures agent based on constraints, 
+    trains it and evaluate
+    
+    :param trial: trial optuna object
+    :return: max rating from trial 
+    """
+
     global env, train_buffer, net_structure
     
 
@@ -171,6 +192,12 @@ def configure_agent(env, input_fc_layer_params, lstm_size, output_fc_layer_param
         
 
 def discretize(action):
+    """
+    Disretisation of action
+
+    :param action: continous action
+    :return: discrete action 
+    """
     return tf.constant((max(min(action, 100), 0)+12) // 25, dtype=tf.float32)
     
 
@@ -180,6 +207,16 @@ def create_environment():
 
 
 def get_trajectory_from_csv(path, state_dim, train_buffer, test_buffer, TRAIN_TEST_RATIO):
+    """
+    Fills replay buffer with Trajectories created from experience stored in csv file  
+    
+    :param path:            path to csv file
+    :param state_dim:       number of dimensions of observation
+    :param replay_buffer:   filled replay buffer 
+    
+    :return: list of trajectories useful for debugging               
+    """
+    
     df = read_csv(path, index_col=0)
     trajs = []
     train_end = len(df) * TRAIN_TEST_RATIO
@@ -231,11 +268,6 @@ def main(argv=None):
 
     print("================================== collecting data ===============================================")
     get_trajectory_from_csv("./csv_data/trajectory.csv", 2, train_buffer, test_buffer, TRAIN_TEST_RATIO)
-
-    # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
-
 
     print("================================== optimizing ======================================================")
     original_stdout = sys.stdout

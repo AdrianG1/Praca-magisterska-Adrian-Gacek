@@ -34,6 +34,13 @@ TRAIN_TEST_RATIO = 0.5
 TRAINING_STEPS = 11
 
 def evaluate_policy2(agent):
+    """
+    Evaluates policy based off cumulative rewards
+
+    :param agent: evaluated agent
+    :return: cumulative reward 
+    """
+    
     reward = 0
     env = tf_py_environment.TFPyEnvironment(Environment(discret=False, episode_time=15, seed=5132))
 
@@ -63,6 +70,15 @@ def evaluate_policy2(agent):
 
 
 def evaluate_policy(agent_original, num_test_steps=1000):
+    """
+    Evaluates policy based on difference between experienced PID response
+    to given observations and agent response for the same observations.
+
+    :param agent: evaluated agent
+    :param num_test_steps: number of steps 
+    :return: cumulative difference 
+    """
+    
     global test_buffer, net_structure
     difference = 0
 
@@ -85,6 +101,15 @@ def evaluate_policy(agent_original, num_test_steps=1000):
 
 
 def training_agent(agent, train_iterator, num_episodes):
+    """
+    Training agent with tested configuration
+
+    :param train_iterator: generator returning experience (train data)
+    :param num_episodes: number of episodes per training
+    
+    :return: max rating from evaluation 
+    """
+    
     steps_per_episode = 110
     max_rating = -np.inf
     max_rating_ep = -1
@@ -106,9 +131,16 @@ def training_agent(agent, train_iterator, num_episodes):
 
 
 def objective(trial):
+    """
+    Optimized objective function necessary for optuna. Configures agent based on constraints, trains
+    it and evaluate
+    
+    :param trial: trial optuna object
+    :return: max rating from trial 
+    """
+    
     global env, train_buffer
     try:
-    # num_of_layers = trial.suggest_int('num_of_layers', 2, 8)
         batch_size_pow = trial.suggest_int('batch_size 2^', 3, 9)
         batch_size = 2**batch_size_pow
         num_steps_dataset = trial.suggest_int('num_steps_dataset', 2, 20)
@@ -221,6 +253,13 @@ def configure_agent(env,
                     actor_fc_input, actor_lstm, actor_fc_output,
                     critic_lstm, critic_fc_output, critic_fc_input,
                     td_errors_loss_fn):
+    """
+    Configures SAC agent based on environment and passed parameters.
+    
+    :param env:
+    :params ...: parameters of SAC agent
+    :return: configured SAC agent 
+    """
 
     strategy = strategy_utils.get_strategy(tpu=False, use_gpu=True)
 
@@ -271,6 +310,16 @@ def create_environment():
 
 
 def get_trajectory_from_csv(path, state_dim, train_buffer, test_buffer, TRAIN_TEST_RATIO):
+    """
+    Fills replay buffer with Trajectories created from experience stored in csv file  
+    
+    :param path:            path to csv file
+    :param state_dim:       number of dimensions of observation
+    :param replay_buffer:   filled replay buffer 
+    
+    :return: list of trajectories useful for debugging               
+    """
+    
     df = read_csv(path, index_col=0)
     trajs = []
     train_end = len(df) * TRAIN_TEST_RATIO
@@ -323,11 +372,6 @@ def main(argv=None):
 
     print("================================== collecting data ===============================================")
     get_trajectory_from_csv("./csv_data/trajectory_real.csv", 2, train_buffer, test_buffer, TRAIN_TEST_RATIO)
-
-    # collected_data_checkpoint = tf.train.Checkpoint(replay_buffer)
-    # collected_data_checkpoint.save("./replay_buffers/replay_buffer")
-    # collected_data_checkpoint.restore("./replay_buffers/replay_buffer-1")
-
 
     print("================================== optimizing ======================================================")
     original_stdout = sys.stdout
